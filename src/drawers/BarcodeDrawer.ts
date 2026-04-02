@@ -1,5 +1,6 @@
+import * as PImage from "pureimage";
+
 import BaseDrawer from "./BaseDrawer";
-import PImage from "pureimage";
 import bwipjs from "@bwip-js/node";
 import { decodePng } from "../utils";
 import { ensureFont } from "../font";
@@ -9,7 +10,7 @@ import { ensureFont } from "../font";
 // elements.  Bars are drawn on even indices and spaces on odd
 // indices.  Patterns are taken from public domain references for
 // Code 39.
-const CODE39_PATTERNS = {
+const CODE39_PATTERNS: { [key: string]: string } = {
   "0": "nnnwwnwnn",
   "1": "wnnwnnnnw",
   "2": "nnwwnnnnw",
@@ -68,7 +69,7 @@ const CODE39_PATTERNS = {
  * @param {object} element
  * @returns {Promise<object>} PImage image object containing the barcode
  */
-async function generateCode39Image(element) {
+async function generateCode39Image(element: any): Promise<any> {
   await ensureFont();
   const narrow = element.moduleWidth || 2;
   const ratio = element.ratio || 2; // default narrow to wide ratio
@@ -90,7 +91,7 @@ async function generateCode39Image(element) {
   // modules; wide modules have width = ratio * narrow.  There is a one
   // narrow module gap between characters except after the last character.
   const quietModules = 10;
-  let totalModules = quietModules;
+  let totalModules = 0;
   for (let i = 0; i < encoded.length; i++) {
     const ch = encoded[i];
     const pat = CODE39_PATTERNS[ch] || CODE39_PATTERNS["-"];
@@ -102,34 +103,39 @@ async function generateCode39Image(element) {
       totalModules += 1;
     }
   }
-  totalModules += quietModules;
+  // quiet zone is not drawn, only used for width calculation if needed
   const width = Math.ceil(totalModules * narrow);
   // Determine bar height and text height.  Reserve about 25% of the total
   // height for human readable text when requested.  A small margin of 4
   // dots separates the bars from the text.  When printInterpretation is
   // false, the full height is used for bars.
   let barHeight = heightDots;
-  let textHeight = 0;
-  let fontSize = 0;
-  const margin = 4;
-  if (printInterp) {
-    fontSize = Math.floor(heightDots * 0.2);
-    textHeight = fontSize + margin;
-    barHeight = heightDots - textHeight;
-    if (barHeight < 1) {
-      barHeight = 1;
-      textHeight = heightDots - 1;
-    }
+  // Monospace font, proporcjonalny rozmiar do wysokości kodu
+  let fontSize = printInterp ? Math.round(heightDots * 0.35) : 0;
+  const margin = 12;
+  let textHeight = printInterp ? fontSize + margin : 0;
+  // Jeśli tekst pod kodem, powiększ obraz o textHeight
+  let canvasHeight = heightDots;
+  let barY = 0;
+  let textY = 0;
+  if (printInterp && !printAbove) {
+    canvasHeight = heightDots + textHeight;
+    barY = 0;
+    textY = heightDots + fontSize; // tekst pod kodem, poniżej słupków
+  } else if (printInterp && printAbove) {
+    canvasHeight = heightDots + textHeight;
+    barY = textHeight;
+    textY = fontSize; // tekst nad kodem
   }
   // Create canvas
-  const img = PImage.make(width || 1, heightDots || 1);
+  const img = PImage.make(width || 1, canvasHeight || 1);
   const ctx = img.getContext("2d");
   // Background white
   ctx.fillStyle = "white";
-  ctx.fillRect(0, 0, width, heightDots);
+  ctx.fillRect(0, 0, width, canvasHeight);
   // Draw bars
   ctx.fillStyle = "black";
-  let x = quietModules * narrow;
+  let x = 0;
   for (let idx = 0; idx < encoded.length; idx++) {
     const ch = encoded[idx];
     const pat = CODE39_PATTERNS[ch] || CODE39_PATTERNS["-"];
@@ -137,7 +143,7 @@ async function generateCode39Image(element) {
       const moduleWidth = (pat[i] === "w" ? ratio : 1) * narrow;
       if (i % 2 === 0) {
         // bar
-        ctx.fillRect(Math.floor(x), 0, Math.ceil(moduleWidth), barHeight);
+        ctx.fillRect(Math.floor(x), barY, Math.ceil(moduleWidth), barHeight);
       }
       x += moduleWidth;
     }
@@ -149,19 +155,11 @@ async function generateCode39Image(element) {
   // Draw human readable text
   if (printInterp && fontSize > 0) {
     ctx.fillStyle = "black";
-    ctx.font = `${fontSize}px DejaVu Sans`;
+    ctx.font = `${fontSize}px Zebra Mono 9x5`;
     const metrics = ctx.measureText(encoded);
     const textWidth = metrics.width;
     const tx = (width - textWidth) / 2;
-    let ty;
-    if (printAbove) {
-      // Draw above: baseline is near the font size (leave margin below)
-      ty = fontSize;
-    } else {
-      // Draw below: baseline should be slightly above the bottom to avoid
-      // clipping.  Subtract a couple of pixels from the total height.
-      ty = barHeight + margin + fontSize - 2;
-    }
+    let ty = textY;
     ctx.fillText(encoded, tx, ty);
   }
   return img;
@@ -176,7 +174,7 @@ async function generateCode39Image(element) {
  * drawing.
  */
 class BarcodeDrawer extends BaseDrawer {
-  async prepare(element) {
+  async prepare(element: any): Promise<any> {
     // First handle Code 39 with a custom renderer.  This implementation
     // generates bars and human text directly using pureimage, yielding
     // more faithful results than bwip‑js.  If generation fails we
@@ -193,7 +191,7 @@ class BarcodeDrawer extends BaseDrawer {
         // Fallback: proceed to bwip‑js if custom generation fails
       }
     }
-    const opts = {};
+    const opts: any = {};
     opts.bcid = element.codeType;
     opts.text = element.text;
     if (element.codeType !== "qrcode" && element.codeType !== "datamatrix") {
@@ -297,7 +295,7 @@ class BarcodeDrawer extends BaseDrawer {
     }
   }
 
-  draw(ctx, element) {
+  draw(ctx: any, element: any): void {
     const { x, y, image, orientation } = element;
     if (!image) {
       return;
@@ -320,6 +318,7 @@ class BarcodeDrawer extends BaseDrawer {
     } else {
       ctx.drawImage(image, x, y, w, h);
     }
+
     ctx.restore();
   }
 }

@@ -1,16 +1,16 @@
 import BaseDrawer from "./BaseDrawer";
 import { decodePng } from "../utils";
 
-/**
- * Drawer for downloaded and recalled graphics.  Images may be stored
- * using ~DY (download PNG) or ~DG (download GRF) commands.  When
- * recalled via ^IM or ^XG a new element is created with the
- * associated graphic data.  This drawer decodes supported formats
- * (currently PNG only) and draws them with optional scaling and
- * orientation.
- */
 class ImageDrawer extends BaseDrawer {
-  async prepare(element) {
+  /**
+   * Drawer for downloaded and recalled graphics.  Images may be stored
+   * using ~DY (download PNG) or ~DG (download GRF) commands.  When
+   * recalled via ^IM or ^XG a new element is created with the
+   * associated graphic data.  This drawer decodes supported formats
+   * (currently PNG only) and draws them with optional scaling and
+   * orientation.
+   */
+  async prepare(element: any): Promise<void> {
     // If no graphic data was attached, nothing to prepare
     const graphic = element.graphic;
     element.image = null;
@@ -40,7 +40,7 @@ class ImageDrawer extends BaseDrawer {
     }
   }
 
-  draw(ctx, element) {
+  draw(ctx: any, element: any): void {
     const { image, x, y, scaleX, scaleY, orientation } = element;
     if (!image) {
       return;

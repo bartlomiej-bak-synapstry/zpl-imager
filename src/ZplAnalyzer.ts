@@ -5,50 +5,45 @@ import VirtualPrinter from "./VirtualPrinter";
  * delimited by either a caret (^) or tilde (~) at the start of each
  * command.  Vertical whitespace is stripped out to mirror the
  * behaviour of Zebra printers, which ignore newlines.
- *
- * @param {string} zpl ZPL data containing zero or more commands
- * @returns {string[]} Array of commands including their leading ^ or ~
  */
-export function splitZplCommands(zpl) {
+export function splitZplCommands(zpl: string): string[] {
   if (!zpl || typeof zpl !== "string") {
-    return [];
-  }
-  // remove vertical whitespace characters
-  const clean = zpl.replace(/[\n\v\f\r]+/g, "");
-  const commands = [];
-  let buffer = "";
-  for (let i = 0; i < clean.length; i++) {
-    const c = clean[i];
-    if (c === "^" || c === "~") {
-      if (buffer.length > 0) {
-        commands.push(buffer);
-        buffer = "";
+      case "GFA": {
+        // Graphic Field Area (bitmap inline)
+        // Format: ^GFA,tttt,ssss,bbbb,data
+        const paramString = cmd.substring(4); // po ^GFA,
+        const parts = paramString.split(",");
+        if (parts.length >= 4) {
+          const totalBytes = parseInt(parts[0], 10) || 0;
+          const bytesPerRow = parseInt(parts[2], 10) || 0;
+          const width = bytesPerRow * 8;
+          const height = totalBytes / bytesPerRow;
+          // Data: wszystko po 4. przecinku
+          const dataParts = paramString.split(",");
+          const dataStr = dataParts.slice(4).join("").replace(/[^A-Fa-f0-9]/g, "");
+          const bitmapData = Buffer.from(dataStr, "hex");
+          const pos = printer.nextPosition || { x: 0, y: 0 };
+          currentElements.push({
+            type: "gfa",
+            x: pos.x,
+            y: pos.y,
+            width,
+            height,
+            bytesPerRow,
+            bitmapData,
+            reverse: printer.consumeReverseNext(),
+          });
+          printer.clearNextPosition();
+        }
+        break;
       }
-    }
-    buffer += c;
-  }
-  if (buffer.length > 0) {
-    commands.push(buffer);
-  }
-  return commands;
 }
 
-/**
- * Parses a ZPL string and produces a list of label descriptions.  Each
- * label contains an array of element definitions that can later be
- * rendered into an image.  This parser intentionally supports only
- * a subset of the ZPL II command set – enough to cover common
- * scenarios such as drawing text, barcodes and boxes.  Unrecognised
- * commands are ignored.
- *
- * @param {string} zplString ZPL document consisting of one or more labels
- * @returns {Array<{elements: any[]}>} List of label objects with elements
- */
-export function analyze(zplString) {
+export function analyze(zplString: string): ZplLabel[] {
   const commands = splitZplCommands(zplString);
   const printer = new VirtualPrinter();
-  const labels = [];
-  let currentElements = [];
+  const labels: ZplLabel[] = [];
+  let currentElements: ZplElement[] = [];
 
   const pushLabel = () => {
     if (currentElements.length > 0) {
@@ -80,7 +75,77 @@ export function analyze(zplString) {
     }
     // Determine the command prefix (two characters after ^ or ~)
     const prefix = cmd.substring(1, 3).toUpperCase();
+    // --- POPRAWKA: obsługa ^GFA ---
+    if (prefix === "GFA") {
+      // Graphic Field Area (bitmap inline)
+      // Format: ^GFA,tttt,ssss,bbbb,data
+      const paramString = cmd.substring(4); // po ^GFA,
+      const parts = paramString.split(",");
+      if (parts.length >= 4) {
+        const totalBytes = parseInt(parts[0], 10) || 0;
+        const bytesPerRow = parseInt(parts[2], 10) || 0;
+        const width = bytesPerRow * 8;
+        const height = totalBytes / bytesPerRow;
+        // Data: wszystko po 4. przecinku
+        const dataParts = paramString.split(",");
+        const dataStr = dataParts.slice(4).join("").replace(/[^A-Fa-f0-9]/g, "");
+        const bitmapData = Buffer.from(dataStr, "hex");
+        const pos = printer.nextPosition || { x: 0, y: 0 };
+        currentElements.push({
+          type: "gfa",
+          x: pos.x,
+          y: pos.y,
+          width,
+          height,
+          bytesPerRow,
+          bitmapData,
+          reverse: printer.consumeReverseNext(),
+        });
+        printer.clearNextPosition();
+      }
+      continue;
+    }
+    // --- KONIEC POPRAWKI ---
     switch (prefix) {
+      case "GFA": {
+        // Graphic Field Area (bitmap inline)
+        // Format: ^GFA,tttt,ssss,bbbb,data
+        // tttt = total bytes of data
+        // ssss = bytes of data per row
+        // bbbb = number of bytes per row
+        // data = bitmap data (hex or compressed)
+        const paramString = cmd.substring(4); // after ^GFA,
+        const parts = paramString.split(",");
+        if (parts.length >= 4) {
+          const totalBytes = parseInt(parts[0], 10) || 0;
+          const bytesPerRow = parseInt(parts[2], 10) || 0;
+          // ZPL: width = bytesPerRow * 8, height = totalBytes / bytesPerRow
+          const width = bytesPerRow * 8;
+          const height = totalBytes / bytesPerRow;
+          // Data is after the 4th comma, may contain commas
+          const dataStart =
+            cmd.indexOf(
+              ",",
+              cmd.indexOf(",", cmd.indexOf(",", cmd.indexOf(",") + 1) + 1) + 1
+            ) + 1;
+          let dataStr = cmd.substring(dataStart).replace(/[^A-Fa-f0-9]/g, "");
+          // Convert hex string to bytes
+          const bitmapData = Buffer.from(dataStr, "hex");
+          const pos = printer.nextPosition || { x: 0, y: 0 };
+          currentElements.push({
+            type: "gfa",
+            x: pos.x,
+            y: pos.y,
+            width,
+            height,
+            bytesPerRow,
+            bitmapData,
+            reverse: printer.consumeReverseNext(),
+          });
+          printer.clearNextPosition();
+        }
+        break;
+      }
       case "FO": {
         // Field Origin – origin at top‑left of field
         const paramString = cmd.substring(3);
@@ -193,8 +258,8 @@ export function analyze(zplString) {
         printer.setFont(
           fontDesignator || printer.fontName,
           printer.orientation || "N",
-          height,
-          width
+          height ?? 0,
+          width ?? 0
         );
         break;
       }
@@ -578,12 +643,21 @@ export function analyze(zplString) {
           // Split remaining parameters on commas.  Empty strings are preserved to maintain positional meaning.
           const params = restParams.length > 0 ? restParams.split(",") : [];
           // Helper to parse integer parameters safely
-          const parseIntSafe = (val) => {
+          const parseIntSafe = (val: string) => {
             const n = parseInt(val, 10);
             return isNaN(n) ? undefined : n;
           };
           // Default spec object for linear barcodes
-          const spec = {
+          const spec: {
+            codeType: string | undefined;
+            orientation: string;
+            height: number;
+            moduleWidth: number;
+            ratio: number;
+            options: any;
+            printInterpretation?: boolean;
+            printAbove?: boolean;
+          } = {
             codeType: undefined,
             orientation: orientation,
             height: printer.barcodeHeight,
@@ -813,7 +887,12 @@ export function analyze(zplString) {
             fparts.length > 0 ? parseInt(fparts[0], 10) : undefined;
           const fwidth =
             fparts.length > 1 ? parseInt(fparts[1], 10) : undefined;
-          printer.setFont(fontDesignator, fontOrientation, fheight, fwidth);
+          printer.setFont(
+            fontDesignator,
+            fontOrientation,
+            fheight ?? 0,
+            fwidth ?? 0
+          );
         }
         break;
       }

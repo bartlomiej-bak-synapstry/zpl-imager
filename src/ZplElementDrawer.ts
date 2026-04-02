@@ -1,9 +1,5 @@
 import * as PImage from "pureimage";
 
-import { ensureFont } from "./font";
-import { getDrawer } from "./drawerFactory";
-import stream from "stream";
-
 /**
  * Computes and draws a collection of ZPL elements on a canvas.  The
  * renderer delegates drawing of individual element types to specific
@@ -15,9 +11,24 @@ import stream from "stream";
  * @param {Array<object>} elements List of element definitions produced by the analyser
  * @returns {Promise<Buffer>} A PNG buffer of the rendered label
  */
-export async function drawElements(elements) {
+/**
+ * Rysuje kolekcję elementów ZPL na canvasie. Pozwala wymusić szerokość i wysokość PNG.
+ * @param {Array<object>} elements Lista elementów
+ * @param {RenderOptions} [options] Opcje renderowania
+ * @returns {Promise<Buffer>} PNG buffer
+ */
+import type { RenderOptions } from "../index";
+import { ensureFont } from "./font";
+import { getDrawer } from "./drawerFactory";
+import stream from "stream";
+
+export async function drawElements(
+  elements: any[],
+  options: RenderOptions = {}
+): Promise<Buffer> {
   // Load the shared font (needed for measurement)
   await ensureFont();
+  console.log("DRAW ELEMENTS", elements);
   // Prepare all elements (compute sizes, generate images)
   for (const el of elements) {
     const drawer = getDrawer(el.type);
@@ -53,8 +64,19 @@ export async function drawElements(elements) {
     if (ey > maxY) maxY = ey;
   }
   const margin = 4;
-  const canvasWidth = Math.ceil(maxX + margin);
-  const canvasHeight = Math.ceil(maxY + margin);
+  let canvasWidth = Math.ceil(maxX + margin);
+  let canvasHeight = Math.ceil(maxY + margin);
+  // Nadpisz rozmiar jeśli podano w opcjach
+  if (options.width && typeof options.width === "number" && options.width > 0) {
+    canvasWidth = options.width;
+  }
+  if (
+    options.height &&
+    typeof options.height === "number" &&
+    options.height > 0
+  ) {
+    canvasHeight = options.height;
+  }
   // Avoid zero dimension canvas
   const img = PImage.make(
     canvasWidth > 0 ? canvasWidth : 1,
@@ -72,7 +94,7 @@ export async function drawElements(elements) {
     }
   }
   // Encode to PNG
-  const chunks = [];
+  const chunks: Buffer[] = [];
   const writable = new stream.Writable({
     write(chunk, encoding, callback) {
       chunks.push(Buffer.from(chunk));

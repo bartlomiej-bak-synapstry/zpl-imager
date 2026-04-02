@@ -1,16 +1,17 @@
+import * as PImage from "pureimage";
+
 import BaseDrawer from "./BaseDrawer";
-import PImage from "pureimage";
 import { ensureFont } from "../font";
 
-/**
- * Drawer for plain text elements.  Text in ZPL is drawn using
- * various fonts; for simplicity we support only DejaVu Sans at
- * arbitrary heights and optional widths.  Orientation may be
- * specified using N,R,I,B for normal, rotated 90°, inverted 180°
- * and rotated 270° respectively.
- */
 class TextDrawer extends BaseDrawer {
-  async prepare(element) {
+  /**
+   * Drawer for plain text elements.  Text in ZPL is drawn using
+   * various fonts; for simplicity we support only DejaVu Sans at
+   * arbitrary heights and optional widths.  Orientation may be
+   * specified using N,R,I,B for normal, rotated 90°, inverted 180°
+   * and rotated 270° respectively.
+   */
+  async prepare(element: any): Promise<void> {
     // Ensure font is loaded before measuring
     await ensureFont();
     // Create a temporary canvas for measurement
@@ -56,7 +57,7 @@ class TextDrawer extends BaseDrawer {
     element.renderHeight = fontSize;
   }
 
-  draw(ctx, element) {
+  draw(ctx: any, element: any): void {
     const { x, y, text, height, orientation, originType, scaleX } = element;
     ctx.save();
     ctx.fillStyle = "black";
@@ -71,10 +72,11 @@ class TextDrawer extends BaseDrawer {
     // originType is 'top-left', the provided y coordinate specifies
     // the top of the text box, so the baseline is y + height.  When
     // 'baseline', the y coordinate already specifies the baseline.
-    let baseX = x;
-    let baseY = y;
+    // Równy margines w X i Y: przesunięcie o fontSize/4
+    let baseX = x + fontSize / 4;
+    let baseY = y + fontSize / 4;
     if (!originType || originType === "top-left") {
-      baseY = y + fontSize;
+      baseY = y + fontSize + fontSize / 4;
     }
     // Use horizontal scaling factor if provided
     const sx = scaleX || 1;

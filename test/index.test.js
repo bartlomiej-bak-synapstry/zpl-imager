@@ -7,8 +7,9 @@ import path from "path";
 import pixelmatch from "pixelmatch";
 import { render } from "../index.ts";
 
+const __dirname = path.dirname(new URL(import.meta.url).pathname);
+
 describe("ZPL to PNG visual regression", () => {
-    const __dirname = path.dirname(new URL(import.meta.url).pathname);
     const zplDir = path.join(__dirname, "resources", "zpl");
     const pngDir = path.join(__dirname, "resources", "png");
     const diffDir = path.join(__dirname, "..", "tmp", "test");
@@ -20,16 +21,22 @@ describe("ZPL to PNG visual regression", () => {
         const pngFile = `${testNum}.png`;
         const zplPath = path.join(zplDir, zplFile);
         const refPngPath = path.join(pngDir, pngFile);
-        const diffPngPath = path.join(diffDir, `${testNum}.png`);
+        const genPngPath = path.join(diffDir, `${testNum}.png`);
+        const diffPngPath = path.join(diffDir, `${testNum}_diff.png`);
 
         test(`ZPL ${zplFile} matches reference PNG`, async () => {
+            // Wczytaj referencyjny PNG
+            const refPng = PNG.sync.read(fs.readFileSync(refPngPath));
             // Wczytaj ZPL
             const zpl = fs.readFileSync(zplPath, "utf8");
             // Wygeneruj PNG z ZPL
-            const genPngBuffer = await render(zpl);
+            const genPngBuffer = await render(zpl, {
+                width: refPng.width,
+                height: refPng.height
+            });
             const genPng = PNG.sync.read(genPngBuffer);
-            // Wczytaj referencyjny PNG
-            const refPng = PNG.sync.read(fs.readFileSync(refPngPath));
+            fs.writeFileSync(genPngPath, genPngBuffer);
+
             // Sprawdź rozmiar
             assert.equal(genPng.width, refPng.width, `Width mismatch for ${zplFile}`);
             assert.equal(genPng.height, refPng.height, `Height mismatch for ${zplFile}`);

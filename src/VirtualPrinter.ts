@@ -7,7 +7,50 @@
  * properties can be added in the future to widen support.
  */
 
+interface FontConfig {
+  name: string;
+  orientation: string;
+  height: number;
+  width: number;
+}
+
+interface FieldBlockConfig {
+  width: number;
+  lines: number;
+  lineSpacing: number;
+  align: string;
+  indent: number;
+}
+
+interface GraphicData {
+  data?: Buffer;
+  dataString?: string;
+  type?: string;
+  totalBytes?: number;
+  bytesPerRow?: number;
+}
+
 class VirtualPrinter {
+  nextPosition: {
+    x: number;
+    y: number;
+    bottom?: boolean;
+    originType?: string;
+  } | null = null;
+  fontName: string = "0";
+  fontHeight: number = 10;
+  fontWidth: number = 0;
+  orientation: string = "N";
+  barcodeModuleWidth: number = 2;
+  barcodeRatio: number = 3;
+  barcodeHeight: number = 50;
+  pendingBarcode: any = null;
+  labelHome: { x: number; y: number } = { x: 0, y: 0 };
+  reverseNext: boolean = false;
+  fieldBlock: FieldBlockConfig | null = null;
+  fieldOrientation: string | null = null;
+  graphics: { [key: string]: GraphicData } = {};
+
   constructor() {
     this.reset();
   }
@@ -21,10 +64,10 @@ class VirtualPrinter {
     // Positioning for the next element
     this.nextPosition = null;
     // Default font settings (ZPL font 0 at 10 dots high)
-    this.fontName = '0';
+    this.fontName = "0";
     this.fontHeight = 10;
     this.fontWidth = 0;
-    this.orientation = 'N'; // N = normal, R = rotate 90°, I = 180°, B = 270°
+    this.orientation = "N"; // N = normal, R = rotate 90°, I = 180°, B = 270°
     // Barcode defaults
     this.barcodeModuleWidth = 2;
     this.barcodeRatio = 3;
@@ -77,12 +120,17 @@ class VirtualPrinter {
    * @param {boolean} [bottom=false] Whether the Y coordinate is relative to the bottom
    * @param {string} [originType='top-left'] Either 'top-left' or 'baseline'
    */
-  setNextPosition(x, y, bottom = false, originType = 'top-left') {
+  setNextPosition(
+    x: number,
+    y: number,
+    bottom: boolean = false,
+    originType: string = "top-left"
+  ): void {
     this.nextPosition = {
       x: x,
       y: y,
       bottom: !!bottom,
-      originType: originType || 'top-left'
+      originType: originType || "top-left",
     };
   }
 
@@ -91,7 +139,7 @@ class VirtualPrinter {
    * current cursor position.  This mirrors how ZPL resets the cursor
    * after each ^FS (field separator).
    */
-  clearNextPosition() {
+  clearNextPosition(): void {
     this.nextPosition = null;
   }
 
@@ -106,19 +154,24 @@ class VirtualPrinter {
    * @param {number} height Height in dots
    * @param {number} width Width in dots (optional)
    */
-  setFont(fontName, orientation, height, width = 0) {
+  setFont(
+    fontName: string,
+    orientation: string,
+    height: number,
+    width: number = 0
+  ): void {
     this.fontName = fontName;
     // If a default field orientation has been set (^FW), merge it with
     // the supplied orientation.  Otherwise use the provided value.
     if (this.fieldOrientation) {
       this.orientation = this.fieldOrientation;
     } else {
-      this.orientation = orientation || 'N';
+      this.orientation = orientation || "N";
     }
-    if (typeof height === 'number' && !isNaN(height) && height > 0) {
+    if (typeof height === "number" && !isNaN(height) && height > 0) {
       this.fontHeight = height;
     }
-    if (typeof width === 'number' && !isNaN(width) && width >= 0) {
+    if (typeof width === "number" && !isNaN(width) && width >= 0) {
       this.fontWidth = width;
     }
   }
@@ -128,14 +181,14 @@ class VirtualPrinter {
    * object can safely be mutated by callers without affecting the
    * underlying state.
    */
-  getFont() {
+  getFont(): FontConfig {
     return {
       name: this.fontName,
       // If a default field orientation is set (^FW), propagate it to the
       // font orientation when queried.
       orientation: this.fieldOrientation || this.orientation,
       height: this.fontHeight,
-      width: this.fontWidth
+      width: this.fontWidth,
     };
   }
 
@@ -148,14 +201,18 @@ class VirtualPrinter {
    * @param {number} ratio Ratio between wide bar and narrow bar
    * @param {number} height Height of the barcode in dots
    */
-  setBarcodeDefaults(moduleWidth, ratio, height) {
-    if (typeof moduleWidth === 'number' && moduleWidth > 0) {
+  setBarcodeDefaults(
+    moduleWidth: number,
+    ratio?: number,
+    height?: number
+  ): void {
+    if (typeof moduleWidth === "number" && moduleWidth > 0) {
       this.barcodeModuleWidth = moduleWidth;
     }
-    if (typeof ratio === 'number' && ratio > 0) {
+    if (typeof ratio === "number" && ratio > 0) {
       this.barcodeRatio = ratio;
     }
-    if (typeof height === 'number' && height > 0) {
+    if (typeof height === "number" && height > 0) {
       this.barcodeHeight = height;
     }
   }
@@ -164,7 +221,7 @@ class VirtualPrinter {
    * Marks the next drawable element to be printed in reverse.  This
    * property is consumed when the next element is created.
    */
-  setReverseNext() {
+  setReverseNext(): void {
     this.reverseNext = true;
   }
 
@@ -172,7 +229,7 @@ class VirtualPrinter {
    * Retrieves and clears the reverse flag for the next element.
    * @returns {boolean}
    */
-  consumeReverseNext() {
+  consumeReverseNext(): boolean {
     const flag = this.reverseNext;
     this.reverseNext = false;
     return flag;
@@ -187,14 +244,14 @@ class VirtualPrinter {
    *
    * @param {object} barcodeSpec An object containing type, height, orientation and other options
    */
-  setPendingBarcode(barcodeSpec) {
+  setPendingBarcode(barcodeSpec: any): void {
     this.pendingBarcode = barcodeSpec;
   }
 
   /**
    * Clears any previously stored barcode specification.
    */
-  clearPendingBarcode() {
+  clearPendingBarcode(): void {
     this.pendingBarcode = null;
   }
 
@@ -205,7 +262,7 @@ class VirtualPrinter {
    * @param {number} x Home X offset in dots
    * @param {number} y Home Y offset in dots
    */
-  setLabelHome(x, y) {
+  setLabelHome(x: number, y: number): void {
     this.labelHome = { x: x || 0, y: y || 0 };
   }
 
@@ -217,18 +274,24 @@ class VirtualPrinter {
    * @param {string} align One of 'L', 'C', 'R', 'J'
    * @param {number} indent Hanging indent in dots
    */
-  setFieldBlock(width, lines, lineSpacing, align, indent) {
+  setFieldBlock(
+    width: number,
+    lines: number,
+    lineSpacing: number,
+    align: string,
+    indent: number
+  ): void {
     this.fieldBlock = {
       width: width || 0,
       lines: lines || 0,
       lineSpacing: lineSpacing || 0,
-      align: (align || 'L').toUpperCase(),
-      indent: indent || 0
+      align: (align || "L").toUpperCase(),
+      indent: indent || 0,
     };
   }
 
   /** Clears the currently defined field block formatting. */
-  clearFieldBlock() {
+  clearFieldBlock(): void {
     this.fieldBlock = null;
   }
 
@@ -237,9 +300,9 @@ class VirtualPrinter {
    * value persists until reset or overridden by another ^FW command.
    * @param {string} orientation One of 'N','R','I','B'
    */
-  setFieldOrientation(orientation) {
-    const o = (orientation || '').toUpperCase();
-    if (o === 'N' || o === 'R' || o === 'I' || o === 'B') {
+  setFieldOrientation(orientation: string): void {
+    const o = (orientation || "").toUpperCase();
+    if (o === "N" || o === "R" || o === "I" || o === "B") {
       this.fieldOrientation = o;
     }
   }
@@ -252,14 +315,14 @@ class VirtualPrinter {
    * @param {string} key The download name (device and filename)
    * @param {object} graphic Graphic information with data Buffer and metadata
    */
-  saveGraphic(key, graphic) {
+  saveGraphic(key: string, graphic: GraphicData): void {
     if (key) {
       this.graphics[key] = graphic;
     }
   }
 
   /** Retrieves a graphic previously saved with saveGraphic. */
-  getGraphic(key) {
+  getGraphic(key: string): GraphicData | undefined {
     return this.graphics[key];
   }
 }

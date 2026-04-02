@@ -1,7 +1,9 @@
 import BarcodeDrawer from "./drawers/BarcodeDrawer";
+import BaseDrawer from "./drawers/BaseDrawer";
 import BoxDrawer from "./drawers/BoxDrawer";
 import CircleDrawer from "./drawers/CircleDrawer";
 import DiagonalLineDrawer from "./drawers/DiagonalLineDrawer";
+import GfaDrawer from "./drawers/GfaDrawer";
 import ImageDrawer from "./drawers/ImageDrawer";
 import TextDrawer from "./drawers/TextDrawer";
 
@@ -14,7 +16,9 @@ import TextDrawer from "./drawers/TextDrawer";
  * @param {string} type Element type identifier
  * @returns {BaseDrawer|undefined}
  */
-export function getDrawer(type) {
+
+export function getDrawer(type: string): BaseDrawer | undefined {
+  console.log("getDrawer", type);
   switch (type) {
     case "text":
       return new TextDrawer();
@@ -28,6 +32,8 @@ export function getDrawer(type) {
       return new DiagonalLineDrawer();
     case "image":
       return new ImageDrawer();
+    case "gfa":
+      return new GfaDrawer();
     default:
       return undefined;
   }

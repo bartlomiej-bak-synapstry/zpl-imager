@@ -13,7 +13,8 @@ let registration;
  *
  * @returns {Promise<void>}
  */
-export async function ensureFont() {
+
+export async function ensureFont(): Promise<void> {
   if (loaded) {
     return;
   }
@@ -23,16 +24,24 @@ export async function ensureFont() {
   // fallback will be the normal font.
   const __dirname = path.dirname(new URL(import.meta.url).pathname);
   const normalFontPath = path.join(__dirname, "..", "fonts", "DejaVuSans.ttf");
+  const monoFontPath = path.join(
+    __dirname,
+    "..",
+    "fonts",
+    "DejaVuSansMono.ttf"
+  );
   const boldFontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
   const condensedBoldPath =
     "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf";
   const normalReg = PImage.registerFont(normalFontPath, "DejaVu Sans");
+  const monoReg = PImage.registerFont(monoFontPath, "Zebra Mono 9x5");
   const boldReg = PImage.registerFont(boldFontPath, "DejaVu Sans Bold");
   const condensedBoldReg = PImage.registerFont(
     condensedBoldPath,
     "DejaVu Sans Condensed Bold"
   );
   await normalReg.load();
+  await monoReg.load();
   try {
     await boldReg.load();
   } catch (err) {

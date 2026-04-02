@@ -1,19 +1,19 @@
 import BaseDrawer from "./BaseDrawer";
 
-/**
- * Drawer for graphic boxes (^GB).  Boxes can be drawn either filled
- * or outlined.  The `color` property of the element determines
- * whether to fill ('F') or stroke ('B' or 'W').  The `thickness`
- * property controls the line width for outlines.
- */
 class BoxDrawer extends BaseDrawer {
-  async prepare(element) {
+  /**
+   * Drawer for graphic boxes (^GB).  Boxes can be drawn either filled
+   * or outlined.  The `color` property of the element determines
+   * whether to fill ('F') or stroke ('B' or 'W').  The `thickness`
+   * property controls the line width for outlines.
+   */
+  async prepare(element: any): Promise<void> {
     // Nothing to do; dimensions are already provided
     element.renderWidth = element.width;
     element.renderHeight = element.height;
   }
 
-  draw(ctx, element) {
+  draw(ctx: any, element: any): void {
     const { x, y, width, height, thickness, color } = element;
     ctx.save();
     // Determine fill vs stroke.  A box is filled when:

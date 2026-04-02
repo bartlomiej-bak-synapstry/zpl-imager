@@ -1,5 +1,5 @@
-import PImage from 'pureimage';
-import { Readable } from 'stream';
+import PImage from "pureimage";
+import { Readable } from "stream";
 
 /**
  * Decode a PNG buffer into a PureImage bitmap.  Many drawers use
@@ -10,8 +10,8 @@ import { Readable } from 'stream';
  * @param {Buffer} buffer PNG image data
  * @returns {Promise<any>} A pureimage bitmap
  */
-export async function decodePng(buffer) {
+
+export async function decodePng(buffer: Buffer): Promise<any> {
   const stream = Readable.from(buffer);
   return PImage.decodePNGFromStream(stream);
 }
-
