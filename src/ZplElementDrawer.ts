@@ -1,34 +1,14 @@
-import * as PImage from "pureimage";
-
-/**
- * Computes and draws a collection of ZPL elements on a canvas.  The
- * renderer delegates drawing of individual element types to specific
- * drawer classes.  All elements are first prepared (to compute
- * dimensions and load resources) and then rendered onto a canvas
- * large enough to contain the union of their bounding boxes.  A
- * small margin is added around the content to prevent clipping.
- *
- * @param {Array<object>} elements List of element definitions produced by the analyser
- * @returns {Promise<Buffer>} A PNG buffer of the rendered label
- */
-/**
- * Rysuje kolekcję elementów ZPL na canvasie. Pozwala wymusić szerokość i wysokość PNG.
- * @param {Array<object>} elements Lista elementów
- * @param {RenderOptions} [options] Opcje renderowania
- * @returns {Promise<Buffer>} PNG buffer
- */
+import { createCanvas } from "./canvas";
 import type { RenderOptions } from "../index";
 import { ensureFont } from "./font";
 import { getDrawer } from "./drawerFactory";
-import stream from "stream";
 
 export async function drawElements(
   elements: any[],
   options: RenderOptions = {}
 ): Promise<Buffer> {
-  // Load the shared font (needed for measurement)
-  await ensureFont();
-  console.log("DRAW ELEMENTS", elements);
+  ensureFont();
+
   // Prepare all elements (compute sizes, generate images)
   for (const el of elements) {
     const drawer = getDrawer(el.type);
@@ -36,71 +16,51 @@ export async function drawElements(
       await drawer.prepare(el);
     }
   }
+
   // Determine extents considering orientation
   let maxX = 0;
   let maxY = 0;
   for (const el of elements) {
-    // Determine width/height after rotation
-    let width = el.renderWidth;
-    let height = el.renderHeight;
-    if (!width || !height) {
-      // Some elements might not set render dimensions; default to 0
-      width = el.width || 0;
-      height = el.height || 0;
-    }
+    let width = el.renderWidth || el.width || 0;
+    let height = el.renderHeight || el.height || 0;
     const orient = el.orientation || "N";
     let rotW = width;
     let rotH = height;
     if (orient === "R" || orient === "B") {
       rotW = height;
       rotH = width;
-    } else if (orient === "I") {
-      rotW = width;
-      rotH = height;
     }
     const ex = el.x + rotW;
     const ey = el.y + rotH;
     if (ex > maxX) maxX = ex;
     if (ey > maxY) maxY = ey;
   }
+
   const margin = 4;
   let canvasWidth = Math.ceil(maxX + margin);
   let canvasHeight = Math.ceil(maxY + margin);
-  // Nadpisz rozmiar jeśli podano w opcjach
-  if (options.width && typeof options.width === "number" && options.width > 0) {
-    canvasWidth = options.width;
-  }
-  if (
-    options.height &&
-    typeof options.height === "number" &&
-    options.height > 0
-  ) {
-    canvasHeight = options.height;
-  }
-  // Avoid zero dimension canvas
-  const img = PImage.make(
+
+  if (options.width && options.width > 0) canvasWidth = options.width;
+  if (options.height && options.height > 0) canvasHeight = options.height;
+
+  const canvas = createCanvas(
     canvasWidth > 0 ? canvasWidth : 1,
     canvasHeight > 0 ? canvasHeight : 1
   );
-  const ctx = img.getContext("2d");
+  const ctx = canvas.getContext("2d");
+
   // Fill background white
   ctx.fillStyle = "white";
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-  // Draw each element using its drawer
+
+  // Draw each element
   for (const el of elements) {
     const drawer = getDrawer(el.type);
     if (drawer && typeof drawer.draw === "function") {
       drawer.draw(ctx, el);
     }
   }
+
   // Encode to PNG
-  const chunks: Buffer[] = [];
-  const writable = new stream.Writable({
-    write(chunk, encoding, callback) {
-      chunks.push(Buffer.from(chunk));
-      callback();
-    },
-  });
-  await PImage.encodePNGToStream(img, writable);
-  return Buffer.concat(chunks);
+  return canvas.toBuffer("image/png") as Buffer;
 }

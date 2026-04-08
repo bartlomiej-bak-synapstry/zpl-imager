@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@bwip-js/node": "^4.7.0",
+    "@napi-rs/canvas": "^0.1.97",
     "@types/node": "^24.2.1",
     "pixelmatch": "^7.1.0",
     "pngjs": "^7.0.0",

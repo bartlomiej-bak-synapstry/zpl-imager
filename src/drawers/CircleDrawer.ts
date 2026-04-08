@@ -1,14 +1,6 @@
 import BaseDrawer from "./BaseDrawer";
 
 class CircleDrawer extends BaseDrawer {
-  /**
-   * Drawer for graphic circles (^GC).  Circles are defined by a
-   * diameter, thickness and colour.  A thickness of 0 means the
-   * circle should be filled.  Colour 'B' or 'W' selects the stroke
-   * colour; we only support drawing in black for simplicity.  The
-   * circle is drawn with its top‑left corner at (x,y).  In ZPL the
-   * origin is the top‑left of the circle.
-   */
   async prepare(element: any): Promise<void> {
     element.renderWidth = element.diameter;
     element.renderHeight = element.diameter;
@@ -19,19 +11,41 @@ class CircleDrawer extends BaseDrawer {
     const radius = diameter / 2;
     const cx = x + radius;
     const cy = y + radius;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    if (thickness === 0 || color === "F") {
-      ctx.fillStyle = "black";
-      ctx.fill();
+
+    const t = thickness || 1;
+    const shouldFill = t === 0 || color === "F" || t >= radius;
+
+    if (shouldFill) {
+      // Filled circle: pixel-perfect using distance check
+      this.fillCircle(ctx, cx, cy, radius);
     } else {
-      ctx.lineWidth = thickness;
-      ctx.strokeStyle = "black";
-      ctx.stroke();
+      // Border circle: fill outer, clear inner
+      this.fillCircle(ctx, cx, cy, radius);
+      this.clearCircle(ctx, cx, cy, radius - t);
     }
-    ctx.closePath();
-    ctx.restore();
+  }
+
+  private fillCircle(ctx: any, cx: number, cy: number, radius: number): void {
+    ctx.fillStyle = "black";
+    const r = Math.round(radius);
+    const icx = Math.round(cx);
+    const icy = Math.round(cy);
+    for (let dy = -r; dy <= r; dy++) {
+      const halfWidth = Math.round(Math.sqrt(r * r - dy * dy));
+      ctx.fillRect(icx - halfWidth, icy + dy, halfWidth * 2, 1);
+    }
+  }
+
+  private clearCircle(ctx: any, cx: number, cy: number, radius: number): void {
+    if (radius <= 0) return;
+    ctx.fillStyle = "white";
+    const r = Math.round(radius);
+    const icx = Math.round(cx);
+    const icy = Math.round(cy);
+    for (let dy = -r; dy <= r; dy++) {
+      const halfWidth = Math.round(Math.sqrt(r * r - dy * dy));
+      ctx.fillRect(icx - halfWidth, icy + dy, halfWidth * 2, 1);
+    }
   }
 }
 

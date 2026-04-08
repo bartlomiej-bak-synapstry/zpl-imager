@@ -18,7 +18,6 @@ import TextDrawer from "./drawers/TextDrawer";
  */
 
 export function getDrawer(type: string): BaseDrawer | undefined {
-  console.log("getDrawer", type);
   switch (type) {
     case "text":
       return new TextDrawer();

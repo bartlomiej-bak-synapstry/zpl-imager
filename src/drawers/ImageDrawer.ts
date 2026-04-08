@@ -1,39 +1,142 @@
+import { createCanvas, loadImage } from "../canvas";
 import BaseDrawer from "./BaseDrawer";
 import { decodePng } from "../utils";
 
+/**
+ * Decode ZPL compressed GRF data into a hex string.
+ */
+function decodeCompressedGrf(data: string, bytesPerRow: number): string {
+  const hexCharsPerRow = bytesPerRow * 2;
+  const rows: string[] = [];
+  let currentRow = "";
+  let i = 0;
+
+  while (i < data.length) {
+    const ch = data[i];
+    if (ch === ",") {
+      currentRow = currentRow.padEnd(hexCharsPerRow, "0");
+      rows.push(currentRow);
+      currentRow = "";
+      i++;
+    } else if (ch === "!") {
+      currentRow = currentRow.padEnd(hexCharsPerRow, "F");
+      rows.push(currentRow);
+      currentRow = "";
+      i++;
+    } else if (ch === ":") {
+      if (rows.length > 0) {
+        rows.push(rows[rows.length - 1]);
+      } else {
+        rows.push("0".repeat(hexCharsPerRow));
+      }
+      i++;
+    } else if (ch >= "G" && ch <= "Y") {
+      const count = ch.charCodeAt(0) - "F".charCodeAt(0);
+      i++;
+      if (i < data.length) {
+        currentRow += data[i].repeat(count);
+        i++;
+      }
+    } else if (ch >= "g" && ch <= "z") {
+      const count = (ch.charCodeAt(0) - "f".charCodeAt(0)) * 20;
+      i++;
+      if (i < data.length) {
+        currentRow += data[i].repeat(count);
+        i++;
+      }
+    } else if (/[0-9A-Fa-f]/.test(ch)) {
+      currentRow += ch;
+      i++;
+      if (currentRow.length >= hexCharsPerRow) {
+        rows.push(currentRow.substring(0, hexCharsPerRow));
+        currentRow = "";
+      }
+    } else {
+      i++;
+    }
+  }
+
+  if (currentRow.length > 0) {
+    currentRow = currentRow.padEnd(hexCharsPerRow, "0");
+    rows.push(currentRow);
+  }
+
+  return rows.join("");
+}
+
+/**
+ * Create a canvas from GRF hex data.
+ */
+function createGrfImage(
+  hexData: string,
+  bytesPerRow: number,
+  totalBytes: number
+): any {
+  const width = bytesPerRow * 8;
+  const height = Math.ceil(totalBytes / bytesPerRow);
+  const bitmapData = Buffer.from(hexData, "hex");
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "white";
+  ctx.fillRect(0, 0, width, height);
+
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const pixels = imgData.data;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const byteIndex = y * bytesPerRow + Math.floor(x / 8);
+      const bitIndex = 7 - (x % 8);
+      if (byteIndex < bitmapData.length) {
+        const byte = bitmapData[byteIndex];
+        const isBlack = ((byte >> bitIndex) & 1) === 1;
+        if (isBlack) {
+          const pi = (y * width + x) * 4;
+          pixels[pi] = 0;
+          pixels[pi + 1] = 0;
+          pixels[pi + 2] = 0;
+          pixels[pi + 3] = 255;
+        }
+      }
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return canvas;
+}
+
 class ImageDrawer extends BaseDrawer {
-  /**
-   * Drawer for downloaded and recalled graphics.  Images may be stored
-   * using ~DY (download PNG) or ~DG (download GRF) commands.  When
-   * recalled via ^IM or ^XG a new element is created with the
-   * associated graphic data.  This drawer decodes supported formats
-   * (currently PNG only) and draws them with optional scaling and
-   * orientation.
-   */
   async prepare(element: any): Promise<void> {
-    // If no graphic data was attached, nothing to prepare
     const graphic = element.graphic;
     element.image = null;
     element.renderWidth = 0;
     element.renderHeight = 0;
-    if (!graphic) {
-      return;
-    }
+    if (!graphic) return;
+
     try {
-      if (graphic.type === "png" && graphic.data) {
-        // Decode PNG buffer into a pureimage bitmap
+      if (graphic.data) {
         const img = await decodePng(graphic.data);
         element.image = img;
         element.renderWidth = img.width * (element.scaleX || 1);
         element.renderHeight = img.height * (element.scaleY || 1);
-      } else if (graphic.data) {
-        // Attempt to decode as PNG even if type unspecified
-        const img = await decodePng(graphic.data);
+      } else if (
+        graphic.dataString &&
+        graphic.bytesPerRow &&
+        graphic.totalBytes
+      ) {
+        const raw = graphic.dataString.replace(/[\s\r\n]+/g, "");
+        let hexData: string;
+        if (/[G-Yg-z,:!]/.test(raw)) {
+          hexData = decodeCompressedGrf(raw, graphic.bytesPerRow);
+        } else {
+          hexData = raw.replace(/[^0-9A-Fa-f]/g, "");
+        }
+        const img = createGrfImage(
+          hexData,
+          graphic.bytesPerRow,
+          graphic.totalBytes
+        );
         element.image = img;
         element.renderWidth = img.width * (element.scaleX || 1);
         element.renderHeight = img.height * (element.scaleY || 1);
-      } else {
-        // Not supported (e.g., GRF ASCII).  Skip.
       }
     } catch (ex) {
       // Decoding failed; leave image null
@@ -42,60 +145,28 @@ class ImageDrawer extends BaseDrawer {
 
   draw(ctx: any, element: any): void {
     const { image, x, y, scaleX, scaleY, orientation } = element;
-    if (!image) {
-      return;
-    }
+    if (!image) return;
+
     const sx = scaleX || 1;
     const sy = scaleY || 1;
+    const w = image.width * sx;
+    const h = image.height * sy;
+
     ctx.save();
     if (orientation === "R") {
-      // Rotate 90° clockwise
       ctx.translate(x, y);
       ctx.rotate(-Math.PI / 2);
-      ctx.drawImage(
-        image,
-        0,
-        0,
-        image.width,
-        image.height,
-        0,
-        0,
-        image.width * sx,
-        image.height * sy
-      );
+      ctx.drawImage(image, 0, 0, w, h);
     } else if (orientation === "I") {
-      // Rotate 180°
       ctx.translate(x, y);
       ctx.rotate(Math.PI);
-      ctx.drawImage(
-        image,
-        0,
-        0,
-        image.width,
-        image.height,
-        0,
-        0,
-        image.width * sx,
-        image.height * sy
-      );
+      ctx.drawImage(image, 0, 0, w, h);
     } else if (orientation === "B") {
-      // Rotate 90° counter‑clockwise
       ctx.translate(x, y);
       ctx.rotate(Math.PI / 2);
-      ctx.drawImage(
-        image,
-        0,
-        0,
-        image.width,
-        image.height,
-        0,
-        0,
-        image.width * sx,
-        image.height * sy
-      );
+      ctx.drawImage(image, 0, 0, w, h);
     } else {
-      // No rotation
-      ctx.drawImage(image, x, y, image.width * sx, image.height * sy);
+      ctx.drawImage(image, x, y, w, h);
     }
     ctx.restore();
   }

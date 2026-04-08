@@ -1,4 +1,17 @@
+import { createCanvas } from "./canvas";
+import { ensureFont } from "./font";
 import VirtualPrinter from "./VirtualPrinter";
+
+export interface ZplElement {
+  type: string;
+  x: number;
+  y: number;
+  [key: string]: any;
+}
+
+export interface ZplLabel {
+  elements: ZplElement[];
+}
 
 /**
  * Splits a raw ZPL string into individual commands.  Commands are
@@ -8,35 +21,26 @@ import VirtualPrinter from "./VirtualPrinter";
  */
 export function splitZplCommands(zpl: string): string[] {
   if (!zpl || typeof zpl !== "string") {
-      case "GFA": {
-        // Graphic Field Area (bitmap inline)
-        // Format: ^GFA,tttt,ssss,bbbb,data
-        const paramString = cmd.substring(4); // po ^GFA,
-        const parts = paramString.split(",");
-        if (parts.length >= 4) {
-          const totalBytes = parseInt(parts[0], 10) || 0;
-          const bytesPerRow = parseInt(parts[2], 10) || 0;
-          const width = bytesPerRow * 8;
-          const height = totalBytes / bytesPerRow;
-          // Data: wszystko po 4. przecinku
-          const dataParts = paramString.split(",");
-          const dataStr = dataParts.slice(4).join("").replace(/[^A-Fa-f0-9]/g, "");
-          const bitmapData = Buffer.from(dataStr, "hex");
-          const pos = printer.nextPosition || { x: 0, y: 0 };
-          currentElements.push({
-            type: "gfa",
-            x: pos.x,
-            y: pos.y,
-            width,
-            height,
-            bytesPerRow,
-            bitmapData,
-            reverse: printer.consumeReverseNext(),
-          });
-          printer.clearNextPosition();
-        }
-        break;
+    return [];
+  }
+  // remove vertical whitespace characters
+  const clean = zpl.replace(/[\n\v\f\r]+/g, "");
+  const commands: string[] = [];
+  let buffer = "";
+  for (let i = 0; i < clean.length; i++) {
+    const c = clean[i];
+    if (c === "^" || c === "~") {
+      if (buffer.length > 0) {
+        commands.push(buffer);
+        buffer = "";
       }
+    }
+    buffer += c;
+  }
+  if (buffer.length > 0) {
+    commands.push(buffer);
+  }
+  return commands;
 }
 
 export function analyze(zplString: string): ZplLabel[] {
@@ -75,20 +79,18 @@ export function analyze(zplString: string): ZplLabel[] {
     }
     // Determine the command prefix (two characters after ^ or ~)
     const prefix = cmd.substring(1, 3).toUpperCase();
-    // --- POPRAWKA: obsługa ^GFA ---
-    if (prefix === "GFA") {
+    // Handle ^GFA (3-char command) before the 2-char prefix switch
+    if (prefix === "GF" && cmd.length > 3 && cmd[3].toUpperCase() === "A") {
       // Graphic Field Area (bitmap inline)
       // Format: ^GFA,tttt,ssss,bbbb,data
-      const paramString = cmd.substring(4); // po ^GFA,
+      const paramString = cmd.substring(4); // after ^GFA
       const parts = paramString.split(",");
       if (parts.length >= 4) {
         const totalBytes = parseInt(parts[0], 10) || 0;
         const bytesPerRow = parseInt(parts[2], 10) || 0;
         const width = bytesPerRow * 8;
         const height = totalBytes / bytesPerRow;
-        // Data: wszystko po 4. przecinku
-        const dataParts = paramString.split(",");
-        const dataStr = dataParts.slice(4).join("").replace(/[^A-Fa-f0-9]/g, "");
+        const dataStr = parts.slice(3).join("").replace(/[^A-Fa-f0-9]/g, "");
         const bitmapData = Buffer.from(dataStr, "hex");
         const pos = printer.nextPosition || { x: 0, y: 0 };
         currentElements.push({
@@ -105,47 +107,7 @@ export function analyze(zplString: string): ZplLabel[] {
       }
       continue;
     }
-    // --- KONIEC POPRAWKI ---
     switch (prefix) {
-      case "GFA": {
-        // Graphic Field Area (bitmap inline)
-        // Format: ^GFA,tttt,ssss,bbbb,data
-        // tttt = total bytes of data
-        // ssss = bytes of data per row
-        // bbbb = number of bytes per row
-        // data = bitmap data (hex or compressed)
-        const paramString = cmd.substring(4); // after ^GFA,
-        const parts = paramString.split(",");
-        if (parts.length >= 4) {
-          const totalBytes = parseInt(parts[0], 10) || 0;
-          const bytesPerRow = parseInt(parts[2], 10) || 0;
-          // ZPL: width = bytesPerRow * 8, height = totalBytes / bytesPerRow
-          const width = bytesPerRow * 8;
-          const height = totalBytes / bytesPerRow;
-          // Data is after the 4th comma, may contain commas
-          const dataStart =
-            cmd.indexOf(
-              ",",
-              cmd.indexOf(",", cmd.indexOf(",", cmd.indexOf(",") + 1) + 1) + 1
-            ) + 1;
-          let dataStr = cmd.substring(dataStart).replace(/[^A-Fa-f0-9]/g, "");
-          // Convert hex string to bytes
-          const bitmapData = Buffer.from(dataStr, "hex");
-          const pos = printer.nextPosition || { x: 0, y: 0 };
-          currentElements.push({
-            type: "gfa",
-            x: pos.x,
-            y: pos.y,
-            width,
-            height,
-            bytesPerRow,
-            bitmapData,
-            reverse: printer.consumeReverseNext(),
-          });
-          printer.clearNextPosition();
-        }
-        break;
-      }
       case "FO": {
         // Field Origin – origin at top‑left of field
         const paramString = cmd.substring(3);
@@ -207,16 +169,21 @@ export function analyze(zplString: string): ZplLabel[] {
         const h = parts.length > 1 ? parseInt(parts[1], 10) : 0;
         const t = parts.length > 2 ? parseInt(parts[2], 10) : 1;
         const c = parts.length > 3 ? parts[3].trim().toUpperCase() : "B";
+        const r = parts.length > 4 ? parseInt(parts[4], 10) || 0 : 0;
         // create box element
         const pos = printer.nextPosition || { x: 0, y: 0 };
+        const originType = pos.originType || "top-left";
+        // ^FT positions the bottom-left of the box
+        const boxY = originType === "baseline" ? pos.y - h : pos.y;
         currentElements.push({
           type: "box",
           x: pos.x,
-          y: pos.y,
+          y: boxY,
           width: w,
           height: h,
           thickness: t,
           color: c,
+          rounding: r,
           reverse: printer.consumeReverseNext(),
         });
         printer.clearNextPosition();
@@ -271,6 +238,11 @@ export function analyze(zplString: string): ZplLabel[] {
           const o = paramString.charAt(0).toUpperCase();
           printer.setFieldOrientation(o);
         }
+        break;
+      }
+      case "FH": {
+        // Hex Field Mode - next ^FD decodes _XX hex escapes
+        printer.setHexFieldMode();
         break;
       }
       case "FB": {
@@ -411,10 +383,12 @@ export function analyze(zplString: string): ZplLabel[] {
         const t = parts.length > 1 ? parseInt(parts[1], 10) : 0;
         const c = parts.length > 2 ? parts[2].trim().toUpperCase() : "B";
         const pos = printer.nextPosition || { x: 0, y: 0 };
+        const circleOriginType = pos.originType || "top-left";
+        const circleY = circleOriginType === "baseline" ? pos.y - d : pos.y;
         currentElements.push({
           type: "circle",
           x: pos.x,
-          y: pos.y,
+          y: circleY,
           diameter: d,
           thickness: t,
           color: c,
@@ -448,20 +422,40 @@ export function analyze(zplString: string): ZplLabel[] {
       case "FD": {
         // Field Data
         // Text or barcode data
-        const text = cmd.substring(3);
+        let text = cmd.substring(3);
+        // ^FH hex field mode: decode _XX hex escapes
+        if (printer.consumeHexFieldMode()) {
+          text = text.replace(/_([0-9A-Fa-f]{2})/g, (_, hex) =>
+            String.fromCharCode(parseInt(hex, 16))
+          );
+        }
         const pos = printer.nextPosition || {
           x: printer.labelHome.x,
           y: printer.labelHome.y,
         };
+        const fieldReverse = printer.consumeReverseNext();
         // If a barcode command preceded, create barcode element
         if (printer.pendingBarcode) {
           const bc = printer.pendingBarcode;
+          // QR code: strip error correction prefix from ^FD
+          // Format: "EC_MODE,data" where EC=H/Q/M/L, MODE=A/M
+          let barcodeText = text;
+          if (bc.codeType === "qrcode" && text.length >= 3 && text[2] === ",") {
+            const ecChar = text[0].toUpperCase();
+            if ("HQML".includes(ecChar)) {
+              bc.options.eclevel = ecChar;
+            }
+            barcodeText = text.substring(3);
+          }
+          const barcodeOriginType =
+            (printer.nextPosition && printer.nextPosition.originType) ||
+            "top-left";
           const element = {
             type: "barcode",
             x: pos.x,
             y: pos.y,
             codeType: bc.codeType,
-            text: text,
+            text: barcodeText,
             height: bc.height || printer.barcodeHeight,
             moduleWidth: bc.moduleWidth || printer.barcodeModuleWidth,
             ratio: bc.ratio || printer.barcodeRatio,
@@ -469,6 +463,8 @@ export function analyze(zplString: string): ZplLabel[] {
             orientation: bc.orientation || "N",
             printInterpretation: bc.printInterpretation,
             printAbove: bc.printAbove,
+            reverse: fieldReverse,
+            originType: barcodeOriginType,
           };
           currentElements.push(element);
           printer.clearPendingBarcode();
@@ -502,49 +498,42 @@ export function analyze(zplString: string): ZplLabel[] {
              */
             // Split on explicit line breaks first
             const rawParts = text.split(/\\&/);
-            const wrappedLines = [];
+            const wrappedLines: string[] = [];
             const fontHeight = font.height || 10;
-            // Estimate horizontal scale for font 0 (OCRA) as used in TextDrawer
             let scaleX = 1;
             if (font.name && font.name.toString().toUpperCase() === "0") {
-              // Use the same default compression factor as TextDrawer
               scaleX = 0.65;
-              if (
-                font.width &&
-                font.width > 0 &&
-                font.height &&
-                font.height > 0
-              ) {
+              if (font.width && font.width > 0 && font.height && font.height > 0) {
                 scaleX = font.width / font.height;
               }
             }
-            // Compute approximate character width in dots
-            const charWidth = fontHeight * 0.6 * scaleX;
-            const maxChars =
-              block.width > 0
-                ? Math.floor(block.width / (charWidth || 1))
-                : Infinity;
+            // Use actual canvas text measurement for word wrapping
+            ensureFont();
+            const _mc = createCanvas(1, 1);
+            const _mctx = _mc.getContext("2d");
+            const fontFace = font.name && font.name.toString().toUpperCase() === "0"
+              ? "DejaVu Sans Condensed Bold" : "DejaVu Sans Mono";
+            _mctx.font = `${fontHeight}px '${fontFace}'`;
+            const blockW = block.width;
+            const measureWidth = (s: string) => _mctx.measureText(s).width * scaleX;
+
             for (const raw of rawParts) {
-              // Break the raw string into words and accumulate
               const words = raw.split(/\s+/);
               let line = "";
               for (let i = 0; i < words.length; i++) {
                 const word = words[i];
-                // Determine the prospective length if we add this word
                 const prospective = line.length > 0 ? line + " " + word : word;
                 if (
-                  maxChars !== Infinity &&
-                  prospective.length > maxChars &&
+                  blockW > 0 &&
+                  measureWidth(prospective) > blockW &&
                   line.length > 0
                 ) {
-                  // Push the current line and start a new one
                   wrappedLines.push(line);
                   line = word;
                 } else {
                   line = prospective;
                 }
               }
-              // Push any remaining text on the current line
               wrappedLines.push(line);
             }
             // Limit the number of lines to the block specification if provided
@@ -585,6 +574,7 @@ export function analyze(zplString: string): ZplLabel[] {
                 originType: originType,
                 blockWidth: block.width,
                 blockAlign: block.align,
+                reverse: fieldReverse,
               });
             }
             // Clear the field block once used
@@ -600,6 +590,7 @@ export function analyze(zplString: string): ZplLabel[] {
               fontName: font.name,
               orientation: font.orientation,
               originType: originType,
+              reverse: fieldReverse,
             });
           }
         }
@@ -771,20 +762,17 @@ export function analyze(zplString: string): ZplLabel[] {
               }
               break;
             case "Q":
-              // QR Code (^BQ).  Params: magnification, error correction level, mask
+              // QR Code (^BQ).  Params: model, magnification
+              // params[0] = model (1 or 2, ignored)
+              // params[1] = magnification factor (1-10) → scale
+              // Error correction level comes from ^FD prefix, NOT from ^BQ
               spec.codeType = "qrcode";
-              // The module size (scale) is first parameter
-              if (params.length > 0) {
-                const mag = parseIntSafe(params[0]);
-                if (mag !== undefined) {
+              if (params.length > 1) {
+                const mag = parseIntSafe(params[1]);
+                if (mag !== undefined && mag > 0) {
                   spec.options.scale = mag;
                 }
               }
-              // error correction level (L,M,Q,H)
-              if (params.length > 1 && params[1]) {
-                spec.options.ecclevel = params[1].trim().toUpperCase();
-              }
-              // QR codes are matrix symbologies so they do not display interpretation lines
               spec.printInterpretation = false;
               spec.printAbove = false;
               break;
@@ -802,14 +790,14 @@ export function analyze(zplString: string): ZplLabel[] {
               spec.printAbove = false;
               break;
             case "7":
-              // PDF417 (^B7).  Params: module width, security level, columns, rows, row height, truncated flag
+              // PDF417 (^B7).  Params: row height, security level, columns, rows, row height, truncated flag
+              // Module width comes from ^BY, NOT from ^B7 first param
               spec.codeType = "pdf417";
-              // Default: do not display interpretation line for PDF417
               spec.printInterpretation = false;
               spec.printAbove = false;
               if (params.length > 0) {
-                const w = parseIntSafe(params[0]);
-                if (w !== undefined) spec.moduleWidth = w;
+                const h = parseIntSafe(params[0]);
+                if (h !== undefined) spec.options.rowheight = h;
               }
               if (params.length > 1) {
                 const sec = parseIntSafe(params[1]);
@@ -833,23 +821,22 @@ export function analyze(zplString: string): ZplLabel[] {
               }
               break;
             case "D":
-              // Some printers use ^BD for Code 128; treat as Code 128
-              spec.codeType = "code128";
-              if (params.length > 0) {
-                const h = parseIntSafe(params[0]);
-                if (h !== undefined) spec.height = h;
-              }
+              // MaxiCode (^BD).  The "orientation" char is actually the mode (2-6).
+              // Mode was consumed by orientation parser only if it's N/R/I/B.
+              // For digits 2-6, it stays in params.
+              spec.codeType = "maxicode";
+              spec.printInterpretation = false;
+              spec.printAbove = false;
+              // Mode: check if orientation is actually a mode digit
               {
-                let piD = true;
-                if (params.length > 1) {
-                  piD = /[Yy]/.test(params[1]);
+                const modeFromOrient = parseInt(orientation, 10);
+                if (!isNaN(modeFromOrient) && modeFromOrient >= 2 && modeFromOrient <= 6) {
+                  spec.options.mode = modeFromOrient;
+                  spec.orientation = "N"; // reset orientation since it was the mode
+                } else if (params.length > 0) {
+                  const mode = parseIntSafe(params[0]);
+                  if (mode !== undefined) spec.options.mode = mode;
                 }
-                spec.printInterpretation = piD;
-                let paD = false;
-                if (params.length > 2) {
-                  paD = /[Yy]/.test(params[2]);
-                }
-                spec.printAbove = paD;
               }
               break;
             default:

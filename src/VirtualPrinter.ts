@@ -49,6 +49,7 @@ class VirtualPrinter {
   reverseNext: boolean = false;
   fieldBlock: FieldBlockConfig | null = null;
   fieldOrientation: string | null = null;
+  hexFieldMode: boolean = false;
   graphics: { [key: string]: GraphicData } = {};
 
   constructor() {
@@ -87,6 +88,9 @@ class VirtualPrinter {
     // Default field orientation for subsequent fields (^FW).  When set,
     // overrides the orientation property of fonts and barcodes.
     this.fieldOrientation = null;
+
+    // Hex field mode (^FH) - next ^FD decodes _XX hex escapes
+    this.hexFieldMode = false;
 
     // Graphics store keyed by download name (e.g. "R:SAMPLE.PNG").  Each
     // entry contains an object with data Buffer and optional metadata such
@@ -305,6 +309,16 @@ class VirtualPrinter {
     if (o === "N" || o === "R" || o === "I" || o === "B") {
       this.fieldOrientation = o;
     }
+  }
+
+  setHexFieldMode(): void {
+    this.hexFieldMode = true;
+  }
+
+  consumeHexFieldMode(): boolean {
+    const flag = this.hexFieldMode;
+    this.hexFieldMode = false;
+    return flag;
   }
 
   /**
