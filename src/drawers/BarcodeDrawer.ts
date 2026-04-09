@@ -209,6 +209,8 @@ class BarcodeDrawer extends BaseDrawer {
     }
 
     ctx.save();
+    // Disable interpolation for pixel-perfect barcode scaling
+    ctx.imageSmoothingEnabled = false;
     if (orient === "R") {
       ctx.translate(x, y);
       ctx.rotate(-Math.PI / 2);
