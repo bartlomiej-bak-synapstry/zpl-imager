@@ -675,7 +675,8 @@ export function analyze(zplString: string): ZplLabel[] {
                 pa = /[Yy]/.test(params[2]);
               }
               spec.printAbove = pa;
-              // Mode (automatic, etc.) is ignored for now (params[3])
+              // Mode parameter (params[4]): N=normal, A=auto/UCC, U=UCC, D=Code D
+              // Both Normal and Auto use auto subset selection in bwip-js
               break;
             case "3":
               // Code 39 (^B3).  Params: checkDigit (ignored), height, printInterpretation, printAbove

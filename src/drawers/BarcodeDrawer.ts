@@ -20,6 +20,123 @@ const CODE39_PATTERNS: { [key: string]: string } = {
   "*": "nwnnwnwnn",
 };
 
+// Code 128 bar patterns: each value maps to 6 element widths (bar,space,bar,space,bar,space)
+// Values 0-105, plus special: 103=StartA, 104=StartB, 105=StartC, 106=Stop
+const CODE128_PATTERNS: number[][] = [
+  [2,1,2,2,2,2],[2,2,2,1,2,2],[2,2,2,2,2,1],[1,2,1,2,2,3],[1,2,1,3,2,2],
+  [1,3,1,2,2,2],[1,2,2,2,1,3],[1,2,2,3,1,2],[1,3,2,2,1,2],[2,2,1,2,1,3],
+  [2,2,1,3,1,2],[2,3,1,2,1,2],[1,1,2,2,3,2],[1,2,2,1,3,2],[1,2,2,2,3,1],//10-14
+  [1,1,3,2,2,2],[1,2,3,1,2,2],[1,2,3,2,2,1],[2,2,3,2,1,1],[2,2,1,1,3,2],
+  [2,2,1,2,3,1],[2,1,3,2,1,2],[2,2,3,1,1,2],[3,1,2,1,3,1],[3,1,1,2,2,2],//20-24
+  [3,2,1,1,2,2],[3,2,1,2,2,1],[3,1,2,2,1,2],[3,2,2,1,1,2],[3,2,2,2,1,1],
+  [2,1,2,1,2,3],[2,1,2,3,2,1],[2,3,2,1,2,1],[1,1,1,3,2,3],[1,3,1,1,2,3],//30-34
+  [1,3,1,3,2,1],[1,1,2,3,1,3],[1,3,2,1,1,3],[1,3,2,3,1,1],[2,1,1,3,1,3],
+  [2,3,1,1,1,3],[2,3,1,3,1,1],[1,1,2,1,3,3],[1,1,2,3,3,1],[1,3,2,1,3,1],//40-44
+  [1,1,3,1,2,3],[1,1,3,3,2,1],[1,3,3,1,2,1],[3,1,3,1,2,1],[2,1,1,3,3,1],
+  [2,3,1,1,3,1],[2,1,3,1,1,3],[2,1,3,3,1,1],[2,1,3,1,3,1],[3,1,1,1,2,3],//50-54
+  [3,1,1,3,2,1],[3,3,1,1,2,1],[3,1,2,1,1,3],[3,1,2,3,1,1],[3,3,2,1,1,1],
+  [3,1,4,1,1,1],[2,2,1,4,1,1],[4,3,1,1,1,1],[1,1,1,2,2,4],[1,1,1,4,2,2],//60-64
+  [1,2,1,1,2,4],[1,2,1,4,2,1],[1,4,1,1,2,2],[1,4,1,2,2,1],[1,1,2,2,1,4],
+  [1,1,2,4,1,2],[1,2,2,1,1,4],[1,2,2,4,1,1],[1,4,2,1,1,2],[1,4,2,2,1,1],//70-74
+  [2,4,1,2,1,1],[2,2,1,1,1,4],[4,1,3,1,1,1],[2,4,1,1,1,2],[1,3,4,1,1,1],
+  [1,1,1,2,4,2],[1,2,1,1,4,2],[1,2,1,2,4,1],[1,1,4,2,1,2],[1,2,4,1,1,2],//80-84
+  [1,2,4,2,1,1],[4,1,1,2,1,2],[4,2,1,1,1,2],[4,2,1,2,1,1],[2,1,2,1,4,1],
+  [2,1,4,1,2,1],[4,1,2,1,2,1],[1,1,1,1,4,3],[1,1,1,3,4,1],[1,3,1,1,4,1],//90-94
+  [1,1,4,1,1,3],[1,1,4,3,1,1],[4,1,1,1,1,3],[4,1,1,3,1,1],[1,1,3,1,4,1],
+  [1,1,4,1,3,1],[3,1,1,1,4,1],[4,1,1,1,3,1],[2,1,1,4,1,2],[2,1,1,2,1,4],//100-104
+  [2,1,1,2,3,2],[2,3,3,1,1,1,2], // 105=StartC, 106=Stop (7 elements)
+];
+
+/**
+ * Count consecutive digits starting at position i in the string.
+ */
+function countDigits(s: string, i: number): number {
+  let n = 0;
+  while (i + n < s.length && s.charCodeAt(i + n) >= 48 && s.charCodeAt(i + n) <= 57) n++;
+  return n;
+}
+
+/**
+ * Encode Code 128 with Zebra's subset switching algorithm:
+ * - Start in Code B
+ * - Switch to Code C when ≥4 consecutive digits remain
+ * - If odd digit count, encode pairs then switch back to B for the last digit
+ */
+function prepareCode128(element: any): void {
+  ensureFont();
+  const m = element.moduleWidth || 2;
+  const heightDots = element.height || 50;
+  const printInterp = element.printInterpretation;
+  const printAbove = element.printAbove;
+  const data = element.text.toString();
+
+  const values: number[] = [104]; // Start B
+  let currentSet: "B" | "C" = "B";
+  let i = 0;
+
+  while (i < data.length) {
+    const digitsAhead = countDigits(data, i);
+
+    if (currentSet === "B") {
+      if (digitsAhead >= 4) {
+        // Switch to Code C for digit pairs
+        values.push(99); // CodeC
+        currentSet = "C";
+      } else {
+        // Encode single character in Code B
+        const code = data.charCodeAt(i);
+        values.push(code >= 32 && code <= 127 ? code - 32 : 0);
+        i++;
+      }
+    } else {
+      // In Code C: encode digit pairs
+      if (digitsAhead >= 2) {
+        const pair = parseInt(data.substring(i, i + 2), 10);
+        values.push(pair);
+        i += 2;
+      } else {
+        // Odd digit or non-digit: switch back to B
+        values.push(100); // CodeB
+        currentSet = "B";
+      }
+    }
+  }
+
+  // Check digit
+  let checksum = values[0];
+  for (let j = 1; j < values.length; j++) {
+    checksum += values[j] * j;
+  }
+  values.push(checksum % 103);
+  values.push(106); // Stop
+
+  // Generate bars (Stop pattern includes terminal bar)
+  const bars: { x: number; w: number }[] = [];
+  let x = 0;
+  for (const val of values) {
+    const pattern = CODE128_PATTERNS[val];
+    for (let pi = 0; pi < pattern.length; pi++) {
+      const barWidth = pattern[pi] * m;
+      if (pi % 2 === 0) {
+        bars.push({ x, w: barWidth });
+      }
+      x += barWidth;
+    }
+  }
+  const width = x;
+  const fontSize = printInterp ? Math.max(8, Math.round(heightDots * 0.22)) : 0;
+  const textMargin = printInterp ? 6 : 0;
+  const textAreaH = printInterp ? fontSize + textMargin : 0;
+
+  element._code128 = {
+    bars, width, text: data, fontSize, textMargin, textAreaH,
+    printAbove: !!printAbove,
+  };
+  element.image = null;
+  element.renderWidth = width;
+  element.renderHeight = heightDots + textAreaH;
+}
+
 /**
  * Prepare Code 39 barcode data for direct drawing.
  */
@@ -125,6 +242,8 @@ class BarcodeDrawer extends BaseDrawer {
       } catch (err) { /* fallthrough to bwip-js */ }
     }
 
+    // Code 128: use bwip-js auto mode (closest to reference encoding)
+
     const heightDots = element.height || 50;
     const m = element.moduleWidth || 2;
     const printInterp = element.printInterpretation;
@@ -187,10 +306,9 @@ class BarcodeDrawer extends BaseDrawer {
       opts.spaceratio = r;
     }
 
-    // Code93 specifics
+    // Code93: Zebra always adds check digits
     if (element.codeType === "code93") {
-      opts.includestartstop = false;
-      opts.includecheck = false;
+      opts.includecheck = true;
       opts.includecheckintext = false;
     }
 
