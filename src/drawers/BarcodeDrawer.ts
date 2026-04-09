@@ -3,46 +3,35 @@ import BaseDrawer from "./BaseDrawer";
 import bwipjs from "@bwip-js/node";
 import { decodePng } from "../utils";
 import { ensureFont } from "../font";
-import { ZEBRA_FONTS } from "../zebraFont";
+import { ZEBRA_FONTS, type ZebraFont } from "../zebraFont";
 
 /**
- * Draw bitmap text using Zebra character bitmaps extracted from reference.
- * Returns true if all characters were available, false if fallback needed.
+ * Draw a glyph from raw grayscale data directly onto canvas ImageData.
+ * This avoids PNG encode/decode/compositing precision loss.
  */
-function drawBitmapText(
-  ctx: any, text: string, x: number, y: number,
-  bitmapFont: {height: number, chars: {[ch: string]: {w: number, a: number, b: string}}},
-  totalBarcodeWidth: number
-): boolean {
-  // Check all characters available
-  for (const ch of text) {
-    if (!bitmapFont.chars[ch]) return false;
-  }
-  // Calculate total text width
-  let totalW = 0;
-  for (let i = 0; i < text.length; i++) {
-    const ch = bitmapFont.chars[text[i]];
-    totalW += (i < text.length - 1) ? ch.a : ch.w;
-  }
-  // Center text under barcode
-  let dx = x + (totalBarcodeWidth - totalW) / 2;
-  ctx.fillStyle = "black";
-  for (let i = 0; i < text.length; i++) {
-    const ch = bitmapFont.chars[text[i]];
-    const bits = Buffer.from(ch.b, "base64");
-    const rx = Math.round(dx);
-    for (let row = 0; row < bitmapFont.height; row++) {
-      for (let col = 0; col < ch.w; col++) {
-        const bitIdx = row * ch.w + col;
-        if ((bits[bitIdx >> 3] >> (7 - (bitIdx & 7))) & 1) {
-          ctx.fillRect(rx + col, y + row, 1, 1);
-        }
+function drawGrayGlyph(
+  ctx: any, glyph: {w: number; g: string}, x: number, y: number, height: number, canvasW: number
+): void {
+  const gray = Buffer.from(glyph.g, "base64");
+  const imgData = ctx.getImageData(x, y, glyph.w, height);
+  const d = imgData.data;
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < glyph.w; col++) {
+      const gVal = gray[row * glyph.w + col];
+      if (gVal < 255) {
+        const idx = (row * glyph.w + col) * 4;
+        // Composite black (gVal) over existing pixel (white background)
+        // result = gVal (the gray value IS the final pixel value)
+        d[idx] = gVal;     // R
+        d[idx + 1] = gVal; // G
+        d[idx + 2] = gVal; // B
+        d[idx + 3] = 255;  // fully opaque
       }
     }
-    dx += ch.a;
   }
-  return true;
+  ctx.putImageData(imgData, x, y);
 }
+
 
 const CODE39_PATTERNS: { [key: string]: string } = {
   "0": "nnnwwnwnn", "1": "wnnwnnnnw", "2": "nnwwnnnnw", "3": "wnwwnnnnn",
@@ -133,9 +122,10 @@ function prepareCode128(element: any): void {
   const textMargin = printInterp ? (bf128 ? m * 3 - 1 : 6) : 0;
   const textAreaH = printInterp ? fontSize + textMargin : 0;
 
+  const use128 = bf128 && data.split("").every((c: string) => bf128.chars[c]);
   element._code128 = {
     bars, width, text: data, fontSize, textMargin, textAreaH,
-    printAbove: !!printAbove,
+    printAbove: !!printAbove, bf128: use128 ? bf128 : undefined,
   };
   element.image = null;
   element.renderWidth = width;
@@ -179,9 +169,13 @@ function prepareCode39(element: any): void {
   const textMargin = printInterp ? (bf ? narrow * 3 - 1 : 6) : 0;
   const textAreaH = printInterp ? fontSize + textMargin : 0;
 
+  // Preload glyph images for bitmap text rendering
+  // glyphs will be loaded lazily in draw() — just mark that bf is available
+  const useGlyphs = bf && encoded.split("").every((c: string) => bf.chars[c]);
+
   element._code39 = {
     bars, width, encoded, fontSize, textMargin, textAreaH,
-    printAbove: !!printAbove,
+    printAbove: !!printAbove, bf: useGlyphs ? bf : undefined,
   };
   element.image = null;
   element.renderWidth = width;
@@ -246,6 +240,7 @@ class BarcodeDrawer extends BaseDrawer {
     if (element.codeType === "code39") {
       try {
         prepareCode39(element);
+        // (glyphs drawn directly from raw gray data, no preload needed)
         return;
       } catch (err) { /* fallthrough to bwip-js */ }
     }
@@ -254,6 +249,7 @@ class BarcodeDrawer extends BaseDrawer {
     if (element.codeType === "code128" && !element.options?.code128auto) {
       try {
         prepareCode128(element);
+        // (glyphs drawn directly from raw gray data, no preload needed)
         return;
       } catch (err) { /* fallthrough to bwip-js */ }
     }
@@ -388,7 +384,11 @@ class BarcodeDrawer extends BaseDrawer {
       return;
     }
     if (element._code128) {
-      element._code39 = { ...element._code128, encoded: element._code128.text };
+      element._code39 = {
+        ...element._code128,
+        encoded: element._code128.text,
+        bf: element._code128.bf128,
+      };
       this.drawCode39(ctx, element);
       return;
     }
@@ -442,11 +442,26 @@ class BarcodeDrawer extends BaseDrawer {
         ctx.fillRect(elX + bar.x, barY, bar.w, heightDots);
       }
       if (fontSize > 0) {
-        // Try pixel-perfect bitmap font, fallback to canvas font
-        const mw = element.moduleWidth || 2;
-        const bf = ZEBRA_FONTS[mw];
-        const bitmapY = bf ? (printAbove ? elY : barY + heightDots + textMargin) : 0;
-        const drawn = bf && drawBitmapText(ctx, encoded, elX, bitmapY, bf, width);
+        // Try raw grayscale glyph rendering, fallback to canvas font
+        const bf39 = element._code39.bf;
+        let drawn = false;
+        if (bf39) {
+          const textY = printAbove ? elY : barY + heightDots + bf39.margin;
+          // Center using BINARY widths (matches Zebra centering)
+          let binTotalW = 0;
+          for (let ci = 0; ci < encoded.length; ci++) {
+            const g = bf39.chars[encoded[ci]];
+            binTotalW += (ci < encoded.length - 1) ? g.a : g.bw;
+          }
+          // Position based on binary start, draw glyph shifted left by dx
+          let bx = elX + (width - binTotalW) / 2;
+          for (let ci = 0; ci < encoded.length; ci++) {
+            const g = bf39.chars[encoded[ci]];
+            drawGrayGlyph(ctx, g, Math.round(bx) - g.dx, textY, bf39.height, width);
+            bx += g.a;
+          }
+          drawn = true;
+        }
         if (!drawn) {
           ctx.save();
           ctx.fillStyle = "black";
