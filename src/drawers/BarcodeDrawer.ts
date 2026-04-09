@@ -64,17 +64,53 @@ function prepareCode39(element: any): void {
 }
 
 /**
- * Apply ZPL rotation transform on canvas context.
- * ZPL rotation semantics (from ^FO origin):
- *  N: right and down
- *  R: down and right (axes swapped)
- *  I: left and up (both negated)
- *  B: down and left (swap + negate x)
+ * Rotate a canvas by the specified ZPL orientation using pixel manipulation.
+ * Returns a new canvas with the rotated content.
+ * R = 90° CW, I = 180°, B = 90° CCW (270° CW)
  */
-function applyZplRotation(ctx: any, orient: string): void {
-  if (orient === "R") ctx.transform(0, 1, 1, 0, 0, 0);
-  else if (orient === "I") ctx.transform(-1, 0, 0, -1, 0, 0);
-  else if (orient === "B") ctx.transform(0, 1, -1, 0, 0, 0);
+function rotateCanvas(srcCanvas: any, orient: string): any {
+  const sw = srcCanvas.width;
+  const sh = srcCanvas.height;
+  const srcCtx = srcCanvas.getContext("2d");
+  const srcData = srcCtx.getImageData(0, 0, sw, sh);
+  const src = srcData.data;
+
+  let dw: number, dh: number;
+  if (orient === "R" || orient === "B") {
+    dw = sh; dh = sw; // swapped
+  } else {
+    dw = sw; dh = sh; // same (I = 180°)
+  }
+
+  const dstCanvas = createCanvas(dw, dh);
+  const dstCtx = dstCanvas.getContext("2d");
+  const dstData = dstCtx.createImageData(dw, dh);
+  const dst = dstData.data;
+
+  for (let dy = 0; dy < dh; dy++) {
+    for (let dx = 0; dx < dw; dx++) {
+      let sx: number, sy: number;
+      if (orient === "R") {
+        // 90° CW: dst(dx,dy) = src(dy, sh-1-dx)
+        sx = dy; sy = sh - 1 - dx;
+      } else if (orient === "I") {
+        // 180°: dst(dx,dy) = src(sw-1-dx, sh-1-dy)
+        sx = sw - 1 - dx; sy = sh - 1 - dy;
+      } else {
+        // B = 90° CCW: dst(dx,dy) = src(sw-1-dy, dx)
+        sx = sw - 1 - dy; sy = dx;
+      }
+      const si = (sy * sw + sx) * 4;
+      const di = (dy * dw + dx) * 4;
+      dst[di] = src[si];
+      dst[di + 1] = src[si + 1];
+      dst[di + 2] = src[si + 2];
+      dst[di + 3] = src[si + 3];
+    }
+  }
+
+  dstCtx.putImageData(dstData, 0, 0);
+  return dstCanvas;
 }
 
 class BarcodeDrawer extends BaseDrawer {
@@ -226,10 +262,15 @@ class BarcodeDrawer extends BaseDrawer {
       const dy = isBaseline ? y - h : y;
       ctx.drawImage(image, x, dy, w, h);
     } else {
-      ctx.translate(x, y);
-      applyZplRotation(ctx, orient);
-      const yOff = isBaseline ? -h : 0;
-      ctx.drawImage(image, 0, yOff, w, h);
+      // Scale image to render size first, then rotate pixels
+      const tmpCanvas = createCanvas(w, h);
+      const tmpCtx = tmpCanvas.getContext("2d");
+      tmpCtx.imageSmoothingEnabled = false;
+      tmpCtx.drawImage(image, 0, 0, w, h);
+      const rotated = rotateCanvas(tmpCanvas, orient);
+      const dx = isBaseline ? (orient === "R" || orient === "B" ? -rotated.width : 0) : 0;
+      const dy = isBaseline ? (orient === "I" ? -rotated.height : 0) : 0;
+      ctx.drawImage(rotated, x + dx, y + dy);
     }
     ctx.restore();
   }
@@ -265,17 +306,10 @@ class BarcodeDrawer extends BaseDrawer {
         ctx.restore();
       }
     } else {
-      // Rotated: compose to temp canvas, then apply ZPL rotation
-      // ZPL rotation is a transpose (swap x/y), but text placement
-      // must be flipped: for R/B, text goes to "above" side on temp canvas
-      // so it ends up on the correct side after transpose.
-      const flipText = (orient === "R" || orient === "B");
-      const textOnTop = flipText ? !printAbove : !!printAbove;
-
+      // Rotated: compose to temp canvas in normal orientation, then rotate pixels
       const tmpCanvas = createCanvas(width, totalH);
       const tmpCtx = tmpCanvas.getContext("2d");
-      // Transparent background - don't paint white over existing elements
-      const barY = textOnTop && fontSize ? textAreaH : 0;
+      const barY = printAbove && fontSize ? textAreaH : 0;
       tmpCtx.fillStyle = "black";
       for (const bar of bars) {
         tmpCtx.fillRect(bar.x, barY, bar.w, heightDots);
@@ -287,18 +321,16 @@ class BarcodeDrawer extends BaseDrawer {
         tmpCtx.fillText(
           encoded,
           (width - m.width) / 2,
-          textOnTop
+          printAbove
             ? fontSize
             : barY + heightDots + textMargin + fontSize - 2
         );
       }
-      // Apply ZPL rotation (transpose-based transform)
-      ctx.save();
-      ctx.translate(elX, elY);
-      applyZplRotation(ctx, orient);
-      const yOff = isBaseline ? -totalH : 0;
-      ctx.drawImage(tmpCanvas, 0, yOff);
-      ctx.restore();
+      // Pixel-perfect rotation (avoids text mirroring from canvas transforms)
+      const rotated = rotateCanvas(tmpCanvas, orient);
+      const dx = isBaseline ? (orient === "R" || orient === "B" ? -rotated.width : 0) : 0;
+      const dy = isBaseline ? (orient === "I" ? -rotated.height : orient === "N" ? -totalH : 0) : 0;
+      ctx.drawImage(rotated, elX + dx, elY + dy);
     }
   }
 
@@ -320,13 +352,9 @@ class BarcodeDrawer extends BaseDrawer {
       ctx.save();
       const totalH = heightDots + (fontSize > 0 ? textAreaH : 0);
       // For R/B, flip text position so it ends up on correct side after transform
-      const flipText = (orient === "R" || orient === "B");
-      const textOnTop = flipText ? !printAbove : !!printAbove;
-
       const tmpCanvas = createCanvas(imgW, totalH);
       const tmpCtx = tmpCanvas.getContext("2d");
-      const barY = textOnTop && fontSize ? textAreaH : 0;
-      // Draw bars stretched to heightDots
+      const barY = printAbove && fontSize ? textAreaH : 0;
       tmpCtx.drawImage(barsImg, 0, barY, imgW, heightDots);
       if (fontSize > 0) {
         tmpCtx.fillStyle = "black";
@@ -335,16 +363,15 @@ class BarcodeDrawer extends BaseDrawer {
         tmpCtx.fillText(
           element.text,
           (imgW - m.width) / 2,
-          textOnTop
+          printAbove
             ? fontSize
             : barY + heightDots + textMargin + fontSize - 2
         );
       }
-      ctx.translate(elX, elY);
-      applyZplRotation(ctx, orient);
-      // ^FT baseline: shift in rotated coordinate space
-      const yOff = isBaseline ? -totalH : 0;
-      ctx.drawImage(tmpCanvas, 0, yOff);
+      const rotated = rotateCanvas(tmpCanvas, orient);
+      const dx = isBaseline ? (orient === "R" || orient === "B" ? -rotated.width : 0) : 0;
+      const dy = isBaseline ? (orient === "I" ? -rotated.height : 0) : 0;
+      ctx.drawImage(rotated, elX + dx, elY + dy);
       ctx.restore();
       return;
     }
