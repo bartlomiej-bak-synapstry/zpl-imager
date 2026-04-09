@@ -795,18 +795,18 @@ export function analyze(zplString: string): ZplLabel[] {
               spec.printAbove = false;
               break;
             case "7":
-              // PDF417 (^B7).  Params: row height, security level, columns, rows, row height, truncated flag
-              // Module width comes from ^BY, NOT from ^B7 first param
+              // PDF417 (^B7). Params: rowheight, securitylevel, columns, rows, truncated
               spec.codeType = "pdf417";
               spec.printInterpretation = false;
               spec.printAbove = false;
               if (params.length > 0) {
-                const h = parseIntSafe(params[0]);
-                if (h !== undefined) spec.options.rowheight = h;
+                const rh = parseFloat(params[0]);
+                if (!isNaN(rh) && rh > 0) spec.options.rowheight = rh;
               }
               if (params.length > 1) {
                 const sec = parseIntSafe(params[1]);
-                if (sec !== undefined) spec.options.securitylevel = sec;
+                // bwip-js uses 'eclevel' not 'securitylevel'
+                if (sec !== undefined) spec.options.eclevel = sec;
               }
               if (params.length > 2) {
                 const cols = parseIntSafe(params[2]);
@@ -817,12 +817,10 @@ export function analyze(zplString: string): ZplLabel[] {
                 if (rows !== undefined) spec.options.rows = rows;
               }
               if (params.length > 4) {
-                const rh = parseIntSafe(params[4]);
-                if (rh !== undefined) spec.options.rowheight = rh;
-              }
-              if (params.length > 5) {
-                // Truncated flag (Y/N)
-                spec.options.truncated = /[Yy]/.test(params[5]);
+                // Truncated flag (Y/N) → use pdf417compact bcid
+                if (/[Yy]/.test(params[4])) {
+                  spec.options.truncated = true;
+                }
               }
               break;
             case "D":

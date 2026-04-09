@@ -247,7 +247,20 @@ class BarcodeDrawer extends BaseDrawer {
     let qrMagnification = 0;
 
     if (element.codeType === "pdf417") {
+      // PDF417: use pdf417compact for truncated mode
+      if (element.options?.truncated) {
+        opts.bcid = "pdf417compact";
+      }
       opts.scale = m;
+      // Convert Zebra rowheight (in dots) to bwip-js rowheight (in module widths)
+      if (element.options?.rowheight) {
+        opts.rowheight = element.options.rowheight / m;
+        delete element.options.rowheight; // don't pass twice via merge
+      }
+      // Remove truncated from options (already handled via bcid)
+      if (element.options?.truncated) {
+        delete element.options.truncated;
+      }
     } else if (element.codeType === "qrcode") {
       // QR: bwip-js has 2px/module at scale=1. Generate at scale=1,
       // then scale output to match ZPL magnification (1px/module).
@@ -361,8 +374,8 @@ class BarcodeDrawer extends BaseDrawer {
       tmpCtx.imageSmoothingEnabled = false;
       tmpCtx.drawImage(image, 0, 0, w, h);
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "R" || orient === "B" ? -rotated.width : 0) : 0;
-      const dy = isBaseline ? (orient === "I" ? -rotated.height : 0) : 0;
+      const dx = isBaseline ? (orient === "R" || orient === "I" ? -rotated.width : 0) : 0;
+      const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
       ctx.drawImage(rotated, x + dx, y + dy);
     }
     ctx.restore();
@@ -421,8 +434,8 @@ class BarcodeDrawer extends BaseDrawer {
       }
       // Pixel-perfect rotation (avoids text mirroring from canvas transforms)
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "R" || orient === "B" ? -rotated.width : 0) : 0;
-      const dy = isBaseline ? (orient === "I" ? -rotated.height : orient === "N" ? -totalH : 0) : 0;
+      const dx = isBaseline ? (orient === "R" || orient === "I" ? -rotated.width : 0) : 0;
+      const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
       ctx.drawImage(rotated, elX + dx, elY + dy);
     }
   }
@@ -462,8 +475,8 @@ class BarcodeDrawer extends BaseDrawer {
         );
       }
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "R" || orient === "B" ? -rotated.width : 0) : 0;
-      const dy = isBaseline ? (orient === "I" ? -rotated.height : 0) : 0;
+      const dx = isBaseline ? (orient === "R" || orient === "I" ? -rotated.width : 0) : 0;
+      const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
       ctx.drawImage(rotated, elX + dx, elY + dy);
       ctx.restore();
       return;
