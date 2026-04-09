@@ -3,6 +3,42 @@ import BaseDrawer from "./BaseDrawer";
 import bwipjs from "@bwip-js/node";
 import { decodePng } from "../utils";
 import { ensureFont } from "../font";
+import { ZEBRA_INTERP_FONTS, type BitmapFont } from "../zebraFont";
+
+/**
+ * Draw bitmap font text onto canvas context.
+ * Uses Zebra's actual character bitmaps extracted from reference rendering.
+ */
+function drawBitmapText(
+  ctx: any, text: string, x: number, y: number,
+  font: BitmapFont, centered?: { totalWidth: number }
+): void {
+  // Calculate total text width
+  let totalW = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = font.chars[text[i]];
+    if (!ch) continue;
+    totalW += (i < text.length - 1) ? ch.a : ch.w;
+  }
+
+  let dx = centered ? x + (centered.totalWidth - totalW) / 2 : x;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = font.chars[text[i]];
+    if (!ch) { dx += 10; continue; }
+    const bits = Buffer.from(ch.b, "base64");
+    for (let row = 0; row < font.height; row++) {
+      for (let col = 0; col < ch.w; col++) {
+        const bitIdx = row * ch.w + col;
+        const byte = bits[bitIdx >> 3];
+        if ((byte >> (7 - (bitIdx & 7))) & 1) {
+          ctx.fillRect(Math.round(dx) + col, y + row, 1, 1);
+        }
+      }
+    }
+    dx += ch.a;
+  }
+}
 
 const CODE39_PATTERNS: { [key: string]: string } = {
   "0": "nnnwwnwnn", "1": "wnnwnnnnw", "2": "nnwwnnnnw", "3": "wnwwnnnnn",
@@ -402,13 +438,8 @@ class BarcodeDrawer extends BaseDrawer {
         ctx.fillStyle = "black";
         ctx.font = `${fontSize}px 'DejaVu Sans Mono'`;
         const m = ctx.measureText(encoded);
-        ctx.fillText(
-          encoded,
-          elX + (width - m.width) / 2,
-          printAbove
-            ? elY + fontSize
-            : barY + heightDots + textMargin + fontSize - 2
-        );
+        ctx.fillText(encoded, elX + (width - m.width) / 2,
+          printAbove ? elY + fontSize : barY + heightDots + textMargin + fontSize - 2);
         ctx.restore();
       }
     } else {
@@ -424,13 +455,8 @@ class BarcodeDrawer extends BaseDrawer {
         tmpCtx.fillStyle = "black";
         tmpCtx.font = `${fontSize}px 'DejaVu Sans Mono'`;
         const m = tmpCtx.measureText(encoded);
-        tmpCtx.fillText(
-          encoded,
-          (width - m.width) / 2,
-          printAbove
-            ? fontSize
-            : barY + heightDots + textMargin + fontSize - 2
-        );
+        tmpCtx.fillText(encoded, (width - m.width) / 2,
+          printAbove ? fontSize : barY + heightDots + textMargin + fontSize - 2);
       }
       // Pixel-perfect rotation (avoids text mirroring from canvas transforms)
       const rotated = rotateCanvas(tmpCanvas, orient);
@@ -471,7 +497,7 @@ class BarcodeDrawer extends BaseDrawer {
           (imgW - m.width) / 2,
           printAbove
             ? fontSize
-            : barY + heightDots + textMargin + fontSize - 2
+            : barY + heightDots + textMargin
         );
       }
       const rotated = rotateCanvas(tmpCanvas, orient);
@@ -496,7 +522,7 @@ class BarcodeDrawer extends BaseDrawer {
       ctx.fillText(
         element.text,
         tx,
-        barY + heightDots + textMargin + fontSize - 2
+        barY + heightDots + textMargin
       );
       ctx.restore();
     }
