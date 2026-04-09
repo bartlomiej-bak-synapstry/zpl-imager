@@ -126,18 +126,14 @@ export function analyze(zplString: string): ZplLabel[] {
       }
       case "FT": {
         // Field Text – origin at baseline of text
+        // ^FT is ABSOLUTE — NOT offset by ^LH (unlike ^FO)
         const paramString = cmd.substring(3);
         const parts = paramString.split(",");
         const x = parseInt(parts[0], 10) || 0;
         const y = parseInt(parts[1], 10) || 0;
         const bottom =
           parts.length > 2 ? parts[2].trim().toUpperCase() === "B" : false;
-        printer.setNextPosition(
-          printer.labelHome.x + x,
-          printer.labelHome.y + y,
-          bottom,
-          "baseline"
-        );
+        printer.setNextPosition(x, y, bottom, "baseline");
         break;
       }
       case "LH": {
@@ -170,17 +166,20 @@ export function analyze(zplString: string): ZplLabel[] {
         const t = parts.length > 2 ? parseInt(parts[2], 10) : 1;
         const c = parts.length > 3 ? parts[3].trim().toUpperCase() : "B";
         const r = parts.length > 4 ? parseInt(parts[4], 10) || 0 : 0;
+        // ZPL: when thickness > dimension, box expands to accommodate
+        const effW = Math.max(w, t);
+        const effH = Math.max(h, t);
         // create box element
         const pos = printer.nextPosition || { x: 0, y: 0 };
         const originType = pos.originType || "top-left";
         // ^FT positions the bottom-left of the box
-        const boxY = originType === "baseline" ? pos.y - h : pos.y;
+        const boxY = originType === "baseline" ? pos.y - effH : pos.y;
         currentElements.push({
           type: "box",
           x: pos.x,
           y: boxY,
-          width: w,
-          height: h,
+          width: effW,
+          height: effH,
           thickness: t,
           color: c,
           rounding: r,
@@ -512,8 +511,8 @@ export function analyze(zplString: string): ZplLabel[] {
             const _mc = createCanvas(1, 1);
             const _mctx = _mc.getContext("2d");
             const fontFace = font.name && font.name.toString().toUpperCase() === "0"
-              ? "DejaVu Sans Condensed Bold" : "DejaVu Sans Mono";
-            _mctx.font = `${fontHeight}px '${fontFace}'`;
+              ? "Roboto Condensed" : "DejaVu Sans Mono";
+            _mctx.font = `bold ${fontHeight}px '${fontFace}'`;
             const blockW = block.width;
             const measureWidth = (s: string) => _mctx.measureText(s).width * scaleX;
 

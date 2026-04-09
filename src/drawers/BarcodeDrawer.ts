@@ -63,6 +63,20 @@ function prepareCode39(element: any): void {
   element.renderHeight = heightDots + textAreaH;
 }
 
+/**
+ * Apply ZPL rotation transform on canvas context.
+ * ZPL rotation semantics (from ^FO origin):
+ *  N: right and down
+ *  R: down and right (axes swapped)
+ *  I: left and up (both negated)
+ *  B: down and left (swap + negate x)
+ */
+function applyZplRotation(ctx: any, orient: string): void {
+  if (orient === "R") ctx.transform(0, 1, 1, 0, 0, 0);
+  else if (orient === "I") ctx.transform(-1, 0, 0, -1, 0, 0);
+  else if (orient === "B") ctx.transform(0, 1, -1, 0, 0, 0);
+}
+
 class BarcodeDrawer extends BaseDrawer {
   async prepare(element: any): Promise<void> {
     ensureFont();
@@ -197,34 +211,25 @@ class BarcodeDrawer extends BaseDrawer {
       return;
     }
     // 2D codes (QR, DataMatrix, MaxiCode, PDF417 with image)
-    let { x, y, image, orientation } = element;
+    const { x, y, image, orientation } = element;
     if (!image) return;
 
     const w = element.renderWidth;
     const h = element.renderHeight;
     const orient = orientation || "N";
-    // ^FT baseline: shift up by render height
-    if (element.originType === "baseline") {
-      y -= h;
-    }
+    const isBaseline = element.originType === "baseline";
 
     ctx.save();
     // Disable interpolation for pixel-perfect barcode scaling
     ctx.imageSmoothingEnabled = false;
-    if (orient === "R") {
-      ctx.translate(x, y);
-      ctx.rotate(-Math.PI / 2);
-      ctx.drawImage(image, 0, 0, w, h);
-    } else if (orient === "I") {
-      ctx.translate(x, y);
-      ctx.rotate(Math.PI);
-      ctx.drawImage(image, 0, 0, w, h);
-    } else if (orient === "B") {
-      ctx.translate(x, y);
-      ctx.rotate(Math.PI / 2);
-      ctx.drawImage(image, 0, 0, w, h);
+    if (orient === "N") {
+      const dy = isBaseline ? y - h : y;
+      ctx.drawImage(image, x, dy, w, h);
     } else {
-      ctx.drawImage(image, x, y, w, h);
+      ctx.translate(x, y);
+      applyZplRotation(ctx, orient);
+      const yOff = isBaseline ? -h : 0;
+      ctx.drawImage(image, 0, yOff, w, h);
     }
     ctx.restore();
   }
@@ -237,12 +242,9 @@ class BarcodeDrawer extends BaseDrawer {
     const orient = orientation || "N";
     const totalH = heightDots + textAreaH;
     const isBaseline = element.originType === "baseline";
-    // ^FT baseline for N orientation: shift up by total height
-    if (isBaseline && orient === "N") {
-      elY -= totalH;
-    }
 
     if (orient === "N") {
+      if (isBaseline) elY -= totalH;
       const barY = elY + (printAbove && fontSize ? textAreaH : 0);
       ctx.fillStyle = "black";
       for (const bar of bars) {
@@ -251,7 +253,7 @@ class BarcodeDrawer extends BaseDrawer {
       if (fontSize > 0) {
         ctx.save();
         ctx.fillStyle = "black";
-        ctx.font = `${fontSize}px 'DejaVu Sans'`;
+        ctx.font = `${fontSize}px 'DejaVu Sans Mono'`;
         const m = ctx.measureText(encoded);
         ctx.fillText(
           encoded,
@@ -262,56 +264,41 @@ class BarcodeDrawer extends BaseDrawer {
         );
         ctx.restore();
       }
-    } else if (orient === "R") {
-      ctx.fillStyle = "black";
+    } else {
+      // Rotated: compose to temp canvas, then apply ZPL rotation
+      // ZPL rotation is a transpose (swap x/y), but text placement
+      // must be flipped: for R/B, text goes to "above" side on temp canvas
+      // so it ends up on the correct side after transpose.
+      const flipText = (orient === "R" || orient === "B");
+      const textOnTop = flipText ? !printAbove : !!printAbove;
+
+      const tmpCanvas = createCanvas(width, totalH);
+      const tmpCtx = tmpCanvas.getContext("2d");
+      // Transparent background - don't paint white over existing elements
+      const barY = textOnTop && fontSize ? textAreaH : 0;
+      tmpCtx.fillStyle = "black";
       for (const bar of bars) {
-        ctx.fillRect(elX, elY + bar.x, heightDots, bar.w);
+        tmpCtx.fillRect(bar.x, barY, bar.w, heightDots);
       }
       if (fontSize > 0) {
-        ctx.save();
-        ctx.fillStyle = "black";
-        ctx.font = `${fontSize}px 'DejaVu Sans'`;
-        const m = ctx.measureText(encoded);
-        ctx.translate(
-          elX + heightDots + textMargin + fontSize - 2,
-          elY + (width - m.width) / 2
+        tmpCtx.fillStyle = "black";
+        tmpCtx.font = `${fontSize}px 'DejaVu Sans Mono'`;
+        const m = tmpCtx.measureText(encoded);
+        tmpCtx.fillText(
+          encoded,
+          (width - m.width) / 2,
+          textOnTop
+            ? fontSize
+            : barY + heightDots + textMargin + fontSize - 2
         );
-        ctx.rotate(Math.PI / 2);
-        ctx.fillText(encoded, 0, 0);
-        ctx.restore();
       }
-    } else if (orient === "I") {
-      ctx.fillStyle = "black";
-      for (const bar of bars) {
-        ctx.fillRect(elX - bar.x - bar.w, elY - heightDots, bar.w, heightDots);
-      }
-      if (fontSize > 0) {
-        ctx.save();
-        ctx.fillStyle = "black";
-        ctx.font = `${fontSize}px 'DejaVu Sans'`;
-        const m = ctx.measureText(encoded);
-        ctx.translate(elX - (width + m.width) / 2, elY - heightDots - textMargin);
-        ctx.fillText(encoded, 0, 0);
-        ctx.restore();
-      }
-    } else if (orient === "B") {
-      ctx.fillStyle = "black";
-      for (const bar of bars) {
-        ctx.fillRect(elX - heightDots, elY - bar.x - bar.w, heightDots, bar.w);
-      }
-      if (fontSize > 0) {
-        ctx.save();
-        ctx.fillStyle = "black";
-        ctx.font = `${fontSize}px 'DejaVu Sans'`;
-        const m = ctx.measureText(encoded);
-        ctx.translate(
-          elX - heightDots - textMargin,
-          elY - (width + m.width) / 2
-        );
-        ctx.rotate(-Math.PI / 2);
-        ctx.fillText(encoded, 0, 0);
-        ctx.restore();
-      }
+      // Apply ZPL rotation (transpose-based transform)
+      ctx.save();
+      ctx.translate(elX, elY);
+      applyZplRotation(ctx, orient);
+      const yOff = isBaseline ? -totalH : 0;
+      ctx.drawImage(tmpCanvas, 0, yOff);
+      ctx.restore();
     }
   }
 
@@ -329,29 +316,32 @@ class BarcodeDrawer extends BaseDrawer {
     }
 
     if (orient !== "N") {
-      // Rotated: compose to temp canvas then draw rotated
+      // Rotated: compose to temp canvas then apply ZPL rotation
       ctx.save();
       const totalH = heightDots + (fontSize > 0 ? textAreaH : 0);
+      // For R/B, flip text position so it ends up on correct side after transform
+      const flipText = (orient === "R" || orient === "B");
+      const textOnTop = flipText ? !printAbove : !!printAbove;
+
       const tmpCanvas = createCanvas(imgW, totalH);
       const tmpCtx = tmpCanvas.getContext("2d");
-      tmpCtx.fillStyle = "white";
-      tmpCtx.fillRect(0, 0, imgW, totalH);
+      const barY = textOnTop && fontSize ? textAreaH : 0;
       // Draw bars stretched to heightDots
-      tmpCtx.drawImage(barsImg, 0, 0, imgW, heightDots);
+      tmpCtx.drawImage(barsImg, 0, barY, imgW, heightDots);
       if (fontSize > 0) {
         tmpCtx.fillStyle = "black";
-        tmpCtx.font = `${fontSize}px 'DejaVu Sans'`;
+        tmpCtx.font = `${fontSize}px 'DejaVu Sans Mono'`;
         const m = tmpCtx.measureText(element.text);
         tmpCtx.fillText(
           element.text,
           (imgW - m.width) / 2,
-          heightDots + textMargin + fontSize - 2
+          textOnTop
+            ? fontSize
+            : barY + heightDots + textMargin + fontSize - 2
         );
       }
       ctx.translate(elX, elY);
-      if (orient === "R") ctx.rotate(-Math.PI / 2);
-      else if (orient === "I") ctx.rotate(Math.PI);
-      else if (orient === "B") ctx.rotate(Math.PI / 2);
+      applyZplRotation(ctx, orient);
       // ^FT baseline: shift in rotated coordinate space
       const yOff = isBaseline ? -totalH : 0;
       ctx.drawImage(tmpCanvas, 0, yOff);
@@ -367,7 +357,7 @@ class BarcodeDrawer extends BaseDrawer {
     if (fontSize > 0) {
       ctx.save();
       ctx.fillStyle = "black";
-      ctx.font = `${fontSize}px 'DejaVu Sans'`;
+      ctx.font = `${fontSize}px 'DejaVu Sans Mono'`;
       const metrics = ctx.measureText(element.text);
       const tx = elX + (imgW - metrics.width) / 2;
       ctx.fillText(

@@ -10,9 +10,9 @@ class TextDrawer extends BaseDrawer {
     const fontSize = element.height || 10;
     const fontFace =
       element.fontName && element.fontName.toString().toUpperCase() === "0"
-        ? "DejaVu Sans Condensed Bold"
+        ? "Roboto Condensed"
         : "DejaVu Sans Mono";
-    ctx.font = `${fontSize}px '${fontFace}'`;
+    ctx.font = `bold ${fontSize}px '${fontFace}'`;
     const metrics = ctx.measureText(element.text || "");
     let scaleX = 1;
     if (element.fontName && element.fontName.toString().toUpperCase() === "0") {
@@ -23,8 +23,6 @@ class TextDrawer extends BaseDrawer {
         element.height > 0
       ) {
         scaleX = element.width / element.height;
-      } else {
-        scaleX = 0.65;
       }
     }
     element.scaleX = scaleX;
@@ -39,9 +37,9 @@ class TextDrawer extends BaseDrawer {
     const fontSize = height || element.renderHeight || 10;
     const fontFace =
       element.fontName && element.fontName.toString().toUpperCase() === "0"
-        ? "DejaVu Sans Condensed Bold"
+        ? "Roboto Condensed"
         : "DejaVu Sans Mono";
-    ctx.font = `${fontSize}px '${fontFace}'`;
+    ctx.font = `bold ${fontSize}px '${fontFace}'`;
     let baseX = x;
     let baseY = y;
     if (!originType || originType === "top-left") {

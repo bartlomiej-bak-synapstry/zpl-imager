@@ -20,15 +20,11 @@ export function ensureFont(): void {
     GlobalFonts.registerFromPath(monoFontPath, "DejaVu Sans Mono");
   }
 
-  // System bold variants
-  const boldPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
-  const condensedBoldPath =
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf";
-  if (fs.existsSync(boldPath)) {
-    GlobalFonts.registerFromPath(boldPath, "DejaVu Sans Bold");
-  }
-  if (fs.existsSync(condensedBoldPath)) {
-    GlobalFonts.registerFromPath(condensedBoldPath, "DejaVu Sans Condensed Bold");
+  // Roboto Condensed Bold - closest open-source match to Zebra Font 0
+  // (CG Triumvirate Bold Condensed)
+  const robotoCondBoldPath = path.join(fontsDir, "RobotoCondensed-Bold.ttf");
+  if (fs.existsSync(robotoCondBoldPath)) {
+    GlobalFonts.registerFromPath(robotoCondBoldPath, "Roboto Condensed");
   }
 
   loaded = true;
