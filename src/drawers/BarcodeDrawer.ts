@@ -3,41 +3,45 @@ import BaseDrawer from "./BaseDrawer";
 import bwipjs from "@bwip-js/node";
 import { decodePng } from "../utils";
 import { ensureFont } from "../font";
-import { ZEBRA_INTERP_FONTS, type BitmapFont } from "../zebraFont";
+import { ZEBRA_FONTS } from "../zebraFont";
 
 /**
- * Draw bitmap font text onto canvas context.
- * Uses Zebra's actual character bitmaps extracted from reference rendering.
+ * Draw bitmap text using Zebra character bitmaps extracted from reference.
+ * Returns true if all characters were available, false if fallback needed.
  */
 function drawBitmapText(
   ctx: any, text: string, x: number, y: number,
-  font: BitmapFont, centered?: { totalWidth: number }
-): void {
+  bitmapFont: {height: number, chars: {[ch: string]: {w: number, a: number, b: string}}},
+  totalBarcodeWidth: number
+): boolean {
+  // Check all characters available
+  for (const ch of text) {
+    if (!bitmapFont.chars[ch]) return false;
+  }
   // Calculate total text width
   let totalW = 0;
   for (let i = 0; i < text.length; i++) {
-    const ch = font.chars[text[i]];
-    if (!ch) continue;
+    const ch = bitmapFont.chars[text[i]];
     totalW += (i < text.length - 1) ? ch.a : ch.w;
   }
-
-  let dx = centered ? x + (centered.totalWidth - totalW) / 2 : x;
-
+  // Center text under barcode
+  let dx = x + (totalBarcodeWidth - totalW) / 2;
+  ctx.fillStyle = "black";
   for (let i = 0; i < text.length; i++) {
-    const ch = font.chars[text[i]];
-    if (!ch) { dx += 10; continue; }
+    const ch = bitmapFont.chars[text[i]];
     const bits = Buffer.from(ch.b, "base64");
-    for (let row = 0; row < font.height; row++) {
+    const rx = Math.round(dx);
+    for (let row = 0; row < bitmapFont.height; row++) {
       for (let col = 0; col < ch.w; col++) {
         const bitIdx = row * ch.w + col;
-        const byte = bits[bitIdx >> 3];
-        if ((byte >> (7 - (bitIdx & 7))) & 1) {
-          ctx.fillRect(Math.round(dx) + col, y + row, 1, 1);
+        if ((bits[bitIdx >> 3] >> (7 - (bitIdx & 7))) & 1) {
+          ctx.fillRect(rx + col, y + row, 1, 1);
         }
       }
     }
     dx += ch.a;
   }
+  return true;
 }
 
 const CODE39_PATTERNS: { [key: string]: string } = {
@@ -124,8 +128,9 @@ function prepareCode128(element: any): void {
     }
   }
   const width = x;
-  const fontSize = printInterp ? Math.max(8, Math.round(heightDots * 0.22)) : 0;
-  const textMargin = printInterp ? 6 : 0;
+  const bf128 = printInterp ? ZEBRA_FONTS[m] : undefined;
+  const fontSize = printInterp ? (bf128 ? bf128.height : Math.max(8, Math.round(heightDots * 0.22))) : 0;
+  const textMargin = printInterp ? (bf128 ? m * 3 - 1 : 6) : 0;
   const textAreaH = printInterp ? fontSize + textMargin : 0;
 
   element._code128 = {
@@ -167,8 +172,11 @@ function prepareCode39(element: any): void {
   }
   const width = x;
 
-  const fontSize = printInterp ? Math.max(8, Math.round(heightDots * 0.22)) : 0;
-  const textMargin = printInterp ? 6 : 0;
+  // Use bitmap font metrics if available, else fallback formula
+  const bf = printInterp ? ZEBRA_FONTS[narrow] : undefined;
+  const fontSize = printInterp ? (bf ? bf.height : Math.max(8, Math.round(heightDots * 0.22))) : 0;
+  // Reference margins: BY3=9, BY4=11, BY5=14 ≈ narrow * 3
+  const textMargin = printInterp ? (bf ? narrow * 3 - 1 : 6) : 0;
   const textAreaH = printInterp ? fontSize + textMargin : 0;
 
   element._code39 = {
@@ -434,13 +442,20 @@ class BarcodeDrawer extends BaseDrawer {
         ctx.fillRect(elX + bar.x, barY, bar.w, heightDots);
       }
       if (fontSize > 0) {
-        ctx.save();
-        ctx.fillStyle = "black";
-        ctx.font = `${fontSize}px 'DejaVu Sans Mono'`;
-        const m = ctx.measureText(encoded);
-        ctx.fillText(encoded, elX + (width - m.width) / 2,
-          printAbove ? elY + fontSize : barY + heightDots + textMargin + fontSize - 2);
-        ctx.restore();
+        // Try pixel-perfect bitmap font, fallback to canvas font
+        const mw = element.moduleWidth || 2;
+        const bf = ZEBRA_FONTS[mw];
+        const bitmapY = bf ? (printAbove ? elY : barY + heightDots + textMargin) : 0;
+        const drawn = bf && drawBitmapText(ctx, encoded, elX, bitmapY, bf, width);
+        if (!drawn) {
+          ctx.save();
+          ctx.fillStyle = "black";
+          ctx.font = `${fontSize}px 'DejaVu Sans Mono'`;
+          const m = ctx.measureText(encoded);
+          ctx.fillText(encoded, elX + (width - m.width) / 2,
+            printAbove ? elY + fontSize : barY + heightDots + textMargin + fontSize - 2);
+          ctx.restore();
+        }
       }
     } else {
       // Rotated: compose to temp canvas in normal orientation, then rotate pixels
