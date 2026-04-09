@@ -48,19 +48,8 @@ const CODE128_PATTERNS: number[][] = [
 ];
 
 /**
- * Count consecutive digits starting at position i in the string.
- */
-function countDigits(s: string, i: number): number {
-  let n = 0;
-  while (i + n < s.length && s.charCodeAt(i + n) >= 48 && s.charCodeAt(i + n) <= 57) n++;
-  return n;
-}
-
-/**
- * Encode Code 128 with Zebra's subset switching algorithm:
- * - Start in Code B
- * - Switch to Code C when ≥4 consecutive digits remain
- * - If odd digit count, encode pairs then switch back to B for the last digit
+ * Encode Code 128 in pure Code B (no subset switching).
+ * Verified to match Zebra reference bar patterns via pixel analysis.
  */
 function prepareCode128(element: any): void {
   ensureFont();
@@ -70,45 +59,20 @@ function prepareCode128(element: any): void {
   const printAbove = element.printAbove;
   const data = element.text.toString();
 
+  // Pure Code B — each character encoded individually, no Code C optimization
   const values: number[] = [104]; // Start B
-  let currentSet: "B" | "C" = "B";
-  let i = 0;
-
-  while (i < data.length) {
-    const digitsAhead = countDigits(data, i);
-
-    if (currentSet === "B") {
-      if (digitsAhead >= 4) {
-        // Switch to Code C for digit pairs
-        values.push(99); // CodeC
-        currentSet = "C";
-      } else {
-        // Encode single character in Code B
-        const code = data.charCodeAt(i);
-        values.push(code >= 32 && code <= 127 ? code - 32 : 0);
-        i++;
-      }
-    } else {
-      // In Code C: encode digit pairs
-      if (digitsAhead >= 2) {
-        const pair = parseInt(data.substring(i, i + 2), 10);
-        values.push(pair);
-        i += 2;
-      } else {
-        // Odd digit or non-digit: switch back to B
-        values.push(100); // CodeB
-        currentSet = "B";
-      }
-    }
+  for (let i = 0; i < data.length; i++) {
+    const code = data.charCodeAt(i);
+    values.push(code >= 32 && code <= 127 ? code - 32 : 0);
   }
 
-  // Check digit
+  // Weighted checksum mod 103
   let checksum = values[0];
   for (let j = 1; j < values.length; j++) {
     checksum += values[j] * j;
   }
   values.push(checksum % 103);
-  values.push(106); // Stop
+  values.push(106); // Stop (pattern includes terminal bar)
 
   // Generate bars (Stop pattern includes terminal bar)
   const bars: { x: number; w: number }[] = [];
@@ -242,7 +206,13 @@ class BarcodeDrawer extends BaseDrawer {
       } catch (err) { /* fallthrough to bwip-js */ }
     }
 
-    // Code 128: use bwip-js auto mode (closest to reference encoding)
+    // Code 128: Normal mode → direct Code B (matches Zebra), Auto → bwip-js
+    if (element.codeType === "code128" && !element.options?.code128auto) {
+      try {
+        prepareCode128(element);
+        return;
+      } catch (err) { /* fallthrough to bwip-js */ }
+    }
 
     const heightDots = element.height || 50;
     const m = element.moduleWidth || 2;
@@ -357,6 +327,11 @@ class BarcodeDrawer extends BaseDrawer {
 
   draw(ctx: any, element: any): void {
     if (element._code39) {
+      this.drawCode39(ctx, element);
+      return;
+    }
+    if (element._code128) {
+      element._code39 = { ...element._code128, encoded: element._code128.text };
       this.drawCode39(ctx, element);
       return;
     }
