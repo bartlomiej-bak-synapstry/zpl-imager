@@ -12,7 +12,6 @@ class BoxDrawer extends BaseDrawer {
 
     const isReverse = !!element.reverse;
     const isWhiteColor = color && color.toUpperCase() === "W";
-    const drawColor = isWhiteColor !== isReverse ? "white" : "black";
 
     const t = thickness || 1;
     const shouldFill =
@@ -21,7 +20,14 @@ class BoxDrawer extends BaseDrawer {
 
     const r = rounding ? Math.round((rounding * Math.min(width, height)) / 16) : 0;
 
-    ctx.fillStyle = drawColor;
+    if (isReverse) {
+      // ^FR: invert pixels within the box shape (XOR via difference compositing)
+      ctx.globalCompositeOperation = "difference";
+      ctx.fillStyle = "white";
+    } else {
+      const drawColor = isWhiteColor ? "white" : "black";
+      ctx.fillStyle = drawColor;
+    }
 
     if (shouldFill) {
       if (r > 0) {
@@ -56,6 +62,18 @@ class BoxDrawer extends BaseDrawer {
       }
     }
     ctx.restore();
+  }
+
+  private invertRect(ctx: any, x: number, y: number, w: number, h: number): void {
+    const imgData = ctx.getImageData(x, y, w, h);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = 255 - d[i];       // R
+      d[i + 1] = 255 - d[i + 1]; // G
+      d[i + 2] = 255 - d[i + 2]; // B
+      // Alpha stays the same
+    }
+    ctx.putImageData(imgData, x, y);
   }
 }
 

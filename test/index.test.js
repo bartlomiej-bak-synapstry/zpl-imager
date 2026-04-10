@@ -14,9 +14,11 @@ describe("ZPL to PNG visual regression", () => {
     const pngDir = path.join(__dirname, "resources", "png");
     const diffDir = path.join(__dirname, "..", "tmp", "test");
 
-    // Per-test tolerance for known encoder limitations (bwip-js vs Zebra firmware)
+    // Per-test tolerance for known limitations
     const maxDiffPixels = {
         "8":  222000,  // PDF417: bwip-js produces different codeword patterns
+        "18": 5,       // Box rounded corner AA: canvas roundRect vs Zebra rasterizer
+        "19": 2,       // Box rounded corner AA: canvas roundRect vs Zebra rasterizer
         "24": 73000,   // MaxiCode: bwip-js different module layout
         "25": 31000,   // QR Code: bwip-js different mask pattern selection
     };
