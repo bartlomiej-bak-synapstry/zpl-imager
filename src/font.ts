@@ -20,12 +20,8 @@ export function ensureFont(): void {
     GlobalFonts.registerFromPath(monoFontPath, "DejaVu Sans Mono");
   }
 
-  // Roboto Condensed Bold - closest open-source match to Zebra Font 0
-  // (CG Triumvirate Bold Condensed)
-  const robotoCondBoldPath = path.join(fontsDir, "RobotoCondensed-Bold.ttf");
-  if (fs.existsSync(robotoCondBoldPath)) {
-    GlobalFonts.registerFromPath(robotoCondBoldPath, "Roboto Condensed");
-  }
+  // Zebra Font 0: relies on system fallback for "Roboto Condensed" font family
+  // (CG Triumvirate Bold Condensed equivalent)
 
   loaded = true;
 }
