@@ -20,8 +20,12 @@ export function ensureFont(): void {
     GlobalFonts.registerFromPath(monoFontPath, "DejaVu Sans Mono");
   }
 
-  // Zebra Font 0: relies on system fallback for "Roboto Condensed" font family
-  // (CG Triumvirate Bold Condensed equivalent)
+  // Zebra Font 0: Liberation Sans Bold as closest match to CG Triumvirate Bold
+  // (regular width, not condensed — Zebra ^A0 uses non-condensed metrics)
+  const font0Path = path.join(fontsDir, "LiberationSans-Bold.ttf");
+  if (fs.existsSync(font0Path)) {
+    GlobalFonts.registerFromPath(font0Path, "Roboto Condensed");
+  }
 
   loaded = true;
 }
