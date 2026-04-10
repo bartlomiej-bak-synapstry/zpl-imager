@@ -457,6 +457,13 @@ class BarcodeDrawer extends BaseDrawer {
         const interpText = element.text.toString();
         const useBfLinear = bfLinear && interpText.split('').every((c: string) => bfLinear.chars[c]);
 
+        // Per-type centering correction: text centered over barW + extra, not imgW
+        const centerExtraMap: {[type: string]: {[mw: number]: number}} = {
+          code93:           {3: 4, 4: 9, 5: 9},
+          interleaved2of5:  {3: 6, 4: 8, 5: 10},
+        };
+        const centerExtra = centerExtraMap[element.codeType]?.[m] || 0;
+
         element._linearBwip = {
           barsImg: img,
           fontSize,
@@ -465,6 +472,7 @@ class BarcodeDrawer extends BaseDrawer {
           printAbove: !!element.printAbove,
           bf: useBfLinear ? bfLinear : undefined,
           interpText,
+          centerExtra,
         };
         element.image = null;
         element.renderWidth = img.width;
@@ -718,7 +726,7 @@ class BarcodeDrawer extends BaseDrawer {
 
   private drawLinearBwip(ctx: any, element: any): void {
     let { x: elX, y: elY, orientation } = element;
-    const { barsImg, fontSize, textMargin, textAreaH, printAbove, bf, interpText } =
+    const { barsImg, fontSize, textMargin, textAreaH, printAbove, bf, interpText, centerExtra } =
       element._linearBwip;
     const heightDots = element.height || 50;
     const imgW = barsImg.width;
@@ -767,16 +775,20 @@ class BarcodeDrawer extends BaseDrawer {
       if (bf) {
         // Bitmap font rendering (pixel-perfect Zebra glyphs)
         const textY = printAbove ? elY : barY + heightDots + bf.margin;
+        // Use side bearings model: advance = bw + rb + next.lb
         let binTotalW = 0;
         for (let ci = 0; ci < text.length; ci++) {
           const g = bf.chars[text[ci]];
-          binTotalW += (ci < text.length - 1) ? g.a : g.bw;
+          const nextG = ci < text.length - 1 ? bf.chars[text[ci + 1]] : null;
+          binTotalW += nextG ? g.bw + g.rb + nextG.lb : g.bw;
         }
-        let bx = elX + (imgW - binTotalW) / 2;
+        const centerW = imgW + (centerExtra || 0);
+        let bx = elX + (centerW - binTotalW) / 2;
         for (let ci = 0; ci < text.length; ci++) {
           const g = bf.chars[text[ci]];
+          const nextG = ci < text.length - 1 ? bf.chars[text[ci + 1]] : null;
           drawGrayGlyph(ctx, g, Math.round(bx) - g.dx, textY, bf.height, imgW);
-          bx += g.a;
+          bx += nextG ? g.bw + g.rb + nextG.lb : g.bw;
         }
       } else {
         // Canvas font fallback at correct size
