@@ -530,7 +530,7 @@ class BarcodeDrawer extends BaseDrawer {
       tmpCtx.imageSmoothingEnabled = false;
       tmpCtx.drawImage(image, 0, 0, w, h);
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "R" || orient === "I" ? -rotated.width : 0) : 0;
+      const dx = isBaseline ? (orient === "I" ? -rotated.width : 0) : 0;
       const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
       ctx.drawImage(rotated, x + dx, y + dy);
     }
@@ -604,12 +604,24 @@ class BarcodeDrawer extends BaseDrawer {
       }
     } else {
       // Rotated: compose to temp canvas in normal orientation, then rotate pixels
-      const tmpCanvas = createCanvas(width, totalH);
+      // Canvas must be wide enough for both bars AND interpretation text
+      let canvasW = width;
+      let barOffsetX = 0;
+      if (fontSize > 0) {
+        const mc = createCanvas(1, 1).getContext("2d");
+        mc.font = `${fontSize}px 'DejaVu Sans Mono'`;
+        const textW = mc.measureText(encoded).width;
+        if (textW > width) {
+          canvasW = Math.ceil(textW) + 4;
+          barOffsetX = Math.floor((canvasW - width) / 2);
+        }
+      }
+      const tmpCanvas = createCanvas(canvasW, totalH);
       const tmpCtx = tmpCanvas.getContext("2d");
       const barY = printAbove && fontSize ? textAreaH : 0;
       tmpCtx.fillStyle = "black";
       for (const bar of bars) {
-        tmpCtx.fillRect(bar.x, barY, bar.w, heightDots);
+        tmpCtx.fillRect(barOffsetX + bar.x, barY, bar.w, heightDots);
       }
       if (fontSize > 0) {
         const bf39 = element._code39.bf;
@@ -634,10 +646,10 @@ class BarcodeDrawer extends BaseDrawer {
           const trailing = element._code39.trailingNarrow !== undefined
             ? element._code39.trailingNarrow : narrow;
           const centerW = useSB ? width + trailing : width;
-          let bx = (centerW - binTotalW) / 2;
+          let bx = barOffsetX + (centerW - binTotalW) / 2;
           for (let ci = 0; ci < encoded.length; ci++) {
             const g = bf39.chars[encoded[ci]];
-            drawGrayGlyph(tmpCtx, g, Math.round(bx) - g.dx, textY, bf39.height, width);
+            drawGrayGlyph(tmpCtx, g, Math.round(bx) - g.dx, textY, bf39.height, canvasW);
             if (useSB) {
               const nextG = ci < encoded.length - 1 ? bf39.chars[encoded[ci + 1]] : null;
               bx += nextG ? g.bw + g.rb + nextG.lb : g.bw;
@@ -649,15 +661,23 @@ class BarcodeDrawer extends BaseDrawer {
           tmpCtx.fillStyle = "black";
           tmpCtx.font = `${fontSize}px 'DejaVu Sans Mono'`;
           const m = tmpCtx.measureText(encoded);
-          tmpCtx.fillText(encoded, (width - m.width) / 2,
+          tmpCtx.fillText(encoded, (canvasW - m.width) / 2,
             printAbove ? fontSize : barY + heightDots + textMargin + fontSize - 2);
         }
       }
       // Pixel-perfect rotation (avoids text mirroring from canvas transforms)
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "R" || orient === "I" ? -rotated.width : 0) : 0;
+      const dx = isBaseline ? (orient === "I" ? -rotated.width : 0) : 0;
       const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
-      ctx.drawImage(rotated, elX + dx, elY + dy);
+      // Compensate for barOffsetX: after rotation the offset maps to different axes
+      let drawX = elX + dx;
+      let drawY = elY + dy;
+      if (barOffsetX > 0) {
+        if (orient === "N" || orient === "I") drawX -= barOffsetX;
+        else if (orient === "R") drawY -= barOffsetX;
+        else if (orient === "B") drawY += barOffsetX;
+      }
+      ctx.drawImage(rotated, drawX, drawY);
     }
   }
 
@@ -683,7 +703,7 @@ class BarcodeDrawer extends BaseDrawer {
         this.drawEAN13Text(tmpCtx, 0, heightDots + textMargin, digits, m, fontSize);
       }
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "R" || orient === "I" ? -rotated.width : 0) : 0;
+      const dx = isBaseline ? (orient === "I" ? -rotated.width : 0) : 0;
       const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
       ctx.drawImage(rotated, elX + dx, elY + dy);
       return;
@@ -813,7 +833,7 @@ class BarcodeDrawer extends BaseDrawer {
         }
       }
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "R" || orient === "I" ? -rotated.width : 0) : 0;
+      const dx = isBaseline ? (orient === "I" ? -rotated.width : 0) : 0;
       const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
       ctx.drawImage(rotated, elX + dx, elY + dy);
       ctx.restore();
