@@ -76,6 +76,12 @@ const CODE128_PATTERNS: number[][] = [
   [2,1,1,2,3,2],[2,3,3,1,1,1,2], // 105=StartC, 106=Stop (7 elements)
 ];
 
+// EAN-13 encoding tables
+const EAN13_L = ['0001101','0011001','0010011','0111101','0100011','0110001','0101111','0111011','0110111','0001011'];
+const EAN13_G = ['0100111','0110011','0011011','0100001','0011101','0111001','0000101','0010001','0001001','0010111'];
+const EAN13_R = ['1110010','1100110','1101100','1000010','1011100','1001110','1010000','1000100','1001000','1110100'];
+const EAN13_PARITY = ['LLLLLL','LLGLGG','LLGGLG','LLGGGL','LGLLGG','LGGLLG','LGGGLL','LGLGLG','LGLGGL','LGGLGL'];
+
 /**
  * Encode Code 128 in pure Code B (no subset switching).
  * Verified to match Zebra reference bar patterns via pixel analysis.
@@ -183,6 +189,86 @@ function prepareCode39(element: any): void {
 }
 
 /**
+ * Prepare EAN-13 barcode with guard bar extensions and per-digit text positioning.
+ */
+function prepareEAN13(element: any): void {
+  ensureFont();
+  const m = element.moduleWidth || 2;
+  const heightDots = element.height || 50;
+  const printInterp = element.printInterpretation;
+
+  const raw = element.text.toString().replace(/\D/g, '');
+  const digits = raw.split('').map(Number);
+  // Ensure 12 data digits
+  while (digits.length < 12) digits.push(0);
+  if (digits.length > 12) digits.length = 12;
+
+  // Calculate check digit
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    sum += digits[i] * (i % 2 === 0 ? 1 : 3);
+  }
+  digits.push((10 - (sum % 10)) % 10);
+
+  const firstDigit = digits[0];
+  const parity = EAN13_PARITY[firstDigit];
+
+  // Guard bars extend BELOW normal data bars (measured from Zebra reference)
+  const GUARD_EXT: {[k:number]:number} = {1:8, 2:11, 3:16, 4:22, 5:28};
+  const guardExt = GUARD_EXT[m] || 5 * m + Math.floor(m / 2);
+  const guardH = heightDots + guardExt;
+
+  type BarInfo = { x: number; w: number; h: number };
+  const bars: BarInfo[] = [];
+  let x = 0;
+
+  const addBars = (pattern: string, h: number) => {
+    for (const ch of pattern) {
+      if (ch === '1') bars.push({ x, w: m, h });
+      x += m;
+    }
+  };
+
+  // Start guard (tall — extends below data bars)
+  addBars('101', guardH);
+  // Left 6 digits (normal height = heightDots)
+  for (let i = 0; i < 6; i++) {
+    const d = digits[i + 1];
+    addBars(parity[i] === 'L' ? EAN13_L[d] : EAN13_G[d], heightDots);
+  }
+  // Center guard (tall)
+  addBars('01010', guardH);
+  // Right 6 digits (normal height)
+  for (let i = 0; i < 6; i++) {
+    addBars(EAN13_R[digits[i + 7]], heightDots);
+  }
+  // End guard (tall)
+  addBars('101', guardH);
+
+  const totalBarWidth = x; // 95 * m
+
+  const bf = printInterp ? ZEBRA_FONTS[m] : undefined;
+  const fontSize = printInterp ? (bf ? bf.height : m * 6 + 1) : 0;
+  // Text starts at dataBarBottom + margin (overlaps guard bar extension area)
+  const textMargin = bf ? bf.margin : m * 3 - 1;
+  // Total height = max of (guard extension, text area from data bar bottom)
+  const textAreaH = printInterp ? Math.max(guardExt, textMargin + fontSize) : guardExt;
+
+  element._ean13 = {
+    bars,
+    totalBarWidth,
+    digits: digits.map(String).join(''),
+    fontSize,
+    guardExt,
+    textMargin,
+    m,
+  };
+  element.image = null;
+  element.renderWidth = totalBarWidth;
+  element.renderHeight = heightDots + textAreaH;
+}
+
+/**
  * Rotate a canvas by the specified ZPL orientation using pixel manipulation.
  * Returns a new canvas with the rotated content.
  * R = 90° CW, I = 180°, B = 90° CCW (270° CW)
@@ -249,7 +335,14 @@ class BarcodeDrawer extends BaseDrawer {
     if (element.codeType === "code128" && !element.options?.code128auto) {
       try {
         prepareCode128(element);
-        // (glyphs drawn directly from raw gray data, no preload needed)
+        return;
+      } catch (err) { /* fallthrough to bwip-js */ }
+    }
+
+    // EAN-13: direct bar drawing with guard bar extensions
+    if (element.codeType === "ean13") {
+      try {
+        prepareEAN13(element);
         return;
       } catch (err) { /* fallthrough to bwip-js */ }
     }
@@ -356,9 +449,13 @@ class BarcodeDrawer extends BaseDrawer {
         }
       } else {
         // Linear barcode: store bars image, render text separately
-        const fontSize = printInterp ? Math.max(8, Math.round(heightDots * 0.22)) : 0;
-        const textMargin = printInterp ? 6 : 0;
+        const bfLinear = printInterp ? ZEBRA_FONTS[m] : undefined;
+        const fontSize = printInterp ? (bfLinear ? bfLinear.height : m * 6 + 1) : 0;
+        const textMargin = printInterp ? (bfLinear ? bfLinear.margin : m * 3 - 1) : 0;
         const textAreaH = printInterp ? fontSize + textMargin : 0;
+
+        const interpText = element.text.toString();
+        const useBfLinear = bfLinear && interpText.split('').every((c: string) => bfLinear.chars[c]);
 
         element._linearBwip = {
           barsImg: img,
@@ -366,6 +463,8 @@ class BarcodeDrawer extends BaseDrawer {
           textMargin,
           textAreaH,
           printAbove: !!element.printAbove,
+          bf: useBfLinear ? bfLinear : undefined,
+          interpText,
         };
         element.image = null;
         element.renderWidth = img.width;
@@ -388,8 +487,13 @@ class BarcodeDrawer extends BaseDrawer {
         ...element._code128,
         encoded: element._code128.text,
         bf: element._code128.bf128,
+        useSideBearings: false,
       };
       this.drawCode39(ctx, element);
+      return;
+    }
+    if (element._ean13) {
+      this.drawEAN13(ctx, element);
       return;
     }
     if (element._linearBwip) {
@@ -447,18 +551,36 @@ class BarcodeDrawer extends BaseDrawer {
         let drawn = false;
         if (bf39) {
           const textY = printAbove ? elY : barY + heightDots + bf39.margin;
-          // Center using BINARY widths (matches Zebra centering)
+          const useSB = element._code39.useSideBearings !== false;
           let binTotalW = 0;
-          for (let ci = 0; ci < encoded.length; ci++) {
-            const g = bf39.chars[encoded[ci]];
-            binTotalW += (ci < encoded.length - 1) ? g.a : g.bw;
+          if (useSB) {
+            // Side bearings: advance = bw + rb + lb(next)
+            for (let ci = 0; ci < encoded.length; ci++) {
+              const g = bf39.chars[encoded[ci]];
+              const nextG = ci < encoded.length - 1 ? bf39.chars[encoded[ci + 1]] : null;
+              binTotalW += nextG ? g.bw + g.rb + nextG.lb : g.bw;
+            }
+          } else {
+            // Legacy advance for Code 128 etc.
+            for (let ci = 0; ci < encoded.length; ci++) {
+              const g = bf39.chars[encoded[ci]];
+              binTotalW += (ci < encoded.length - 1) ? g.a : g.bw;
+            }
           }
-          // Position based on binary start, draw glyph shifted left by dx
-          let bx = elX + (width - binTotalW) / 2;
+          const narrow = element.moduleWidth || 2;
+          const trailing = element._code39.trailingNarrow !== undefined
+            ? element._code39.trailingNarrow : narrow;
+          const centerW = useSB ? width + trailing : width;
+          let bx = elX + (centerW - binTotalW) / 2;
           for (let ci = 0; ci < encoded.length; ci++) {
             const g = bf39.chars[encoded[ci]];
             drawGrayGlyph(ctx, g, Math.round(bx) - g.dx, textY, bf39.height, width);
-            bx += g.a;
+            if (useSB) {
+              const nextG = ci < encoded.length - 1 ? bf39.chars[encoded[ci + 1]] : null;
+              bx += nextG ? g.bw + g.rb + nextG.lb : g.bw;
+            } else {
+              bx += g.a;
+            }
           }
           drawn = true;
         }
@@ -496,14 +618,113 @@ class BarcodeDrawer extends BaseDrawer {
     }
   }
 
+  private drawEAN13(ctx: any, element: any): void {
+    let { x: elX, y: elY, orientation } = element;
+    const { bars, totalBarWidth, digits, fontSize, guardExt, textMargin, m } =
+      element._ean13;
+    const heightDots = element.height || 50;
+    const orient = orientation || "N";
+    const isBaseline = element.originType === "baseline";
+    const textAreaH = fontSize > 0 ? Math.max(guardExt, textMargin + fontSize) : guardExt;
+    const totalH = heightDots + textAreaH;
+
+    if (orient !== "N") {
+      const tmpCanvas = createCanvas(totalBarWidth, totalH);
+      const tmpCtx = tmpCanvas.getContext("2d");
+      tmpCtx.fillStyle = "black";
+      for (const bar of bars) {
+        tmpCtx.fillRect(bar.x, 0, bar.w, bar.h);
+      }
+      if (fontSize > 0) {
+        // Text at dataBarBottom + margin (heightDots + textMargin from top)
+        this.drawEAN13Text(tmpCtx, 0, heightDots + textMargin, digits, m, fontSize);
+      }
+      const rotated = rotateCanvas(tmpCanvas, orient);
+      const dx = isBaseline ? (orient === "R" || orient === "I" ? -rotated.width : 0) : 0;
+      const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
+      ctx.drawImage(rotated, elX + dx, elY + dy);
+      return;
+    }
+
+    if (isBaseline) elY -= totalH;
+
+    ctx.fillStyle = "black";
+    for (const bar of bars) {
+      ctx.fillRect(elX + bar.x, elY, bar.w, bar.h);
+    }
+
+    if (fontSize > 0) {
+      // Text at dataBarBottom + margin
+      this.drawEAN13Text(ctx, elX, elY + heightDots + textMargin, digits, m, fontSize);
+    }
+  }
+
+  /**
+   * Draw EAN-13 text: first digit to the left, 6 digits under left half, 6 under right half.
+   */
+  private drawEAN13Text(
+    ctx: any, barX: number, textY: number, digits: string, m: number, fontSize: number
+  ): void {
+    const bf = ZEBRA_FONTS[m];
+    const allInBf = bf && digits.split('').every((c: string) => bf.chars[c]);
+
+    if (allInBf && bf) {
+      // Bitmap font: position each digit centered in its 7-module slot
+      const slotW = 7 * m;
+
+      // First digit to the left of start guard
+      const g0 = bf.chars[digits[0]];
+      drawGrayGlyph(ctx, g0, barX - m - g0.bw - g0.dx, textY, bf.height, g0.w);
+
+      // Left 6 digits
+      for (let i = 0; i < 6; i++) {
+        const g = bf.chars[digits[i + 1]];
+        const slotX = barX + (3 + i * 7) * m;
+        const cx = slotX + Math.round((slotW - g.bw) / 2);
+        drawGrayGlyph(ctx, g, cx - g.dx, textY, bf.height, g.w);
+      }
+
+      // Right 6 digits
+      for (let i = 0; i < 6; i++) {
+        const g = bf.chars[digits[i + 7]];
+        const slotX = barX + (50 + i * 7) * m;
+        const cx = slotX + Math.round((slotW - g.bw) / 2);
+        drawGrayGlyph(ctx, g, cx - g.dx, textY, bf.height, g.w);
+      }
+    } else {
+      // Canvas font fallback (BY1/BY2 where no bitmap font exists)
+      ctx.save();
+      ctx.fillStyle = "black";
+      ctx.font = `${fontSize}px 'DejaVu Sans Mono'`;
+      ctx.textBaseline = "top";
+      ctx.textAlign = "center";
+
+      const digitW = ctx.measureText("0").width;
+      ctx.fillText(digits[0], barX - digitW / 2 - m, textY);
+
+      for (let i = 0; i < 6; i++) {
+        const cx = barX + (3 + i * 7 + 3.5) * m;
+        ctx.fillText(digits[i + 1], cx, textY);
+      }
+
+      for (let i = 0; i < 6; i++) {
+        const cx = barX + (50 + i * 7 + 3.5) * m;
+        ctx.fillText(digits[i + 7], cx, textY);
+      }
+
+      ctx.restore();
+    }
+  }
+
   private drawLinearBwip(ctx: any, element: any): void {
     let { x: elX, y: elY, orientation } = element;
-    const { barsImg, fontSize, textMargin, textAreaH, printAbove } =
+    const { barsImg, fontSize, textMargin, textAreaH, printAbove, bf, interpText } =
       element._linearBwip;
     const heightDots = element.height || 50;
     const imgW = barsImg.width;
     const orient = orientation || "N";
     const isBaseline = element.originType === "baseline";
+    const text = interpText || element.text;
     // ^FT baseline for N orientation: shift up by total height
     if (isBaseline && orient === "N") {
       elY -= heightDots + textAreaH;
@@ -513,7 +734,6 @@ class BarcodeDrawer extends BaseDrawer {
       // Rotated: compose to temp canvas then apply ZPL rotation
       ctx.save();
       const totalH = heightDots + (fontSize > 0 ? textAreaH : 0);
-      // For R/B, flip text position so it ends up on correct side after transform
       const tmpCanvas = createCanvas(imgW, totalH);
       const tmpCtx = tmpCanvas.getContext("2d");
       const barY = printAbove && fontSize ? textAreaH : 0;
@@ -521,13 +741,13 @@ class BarcodeDrawer extends BaseDrawer {
       if (fontSize > 0) {
         tmpCtx.fillStyle = "black";
         tmpCtx.font = `${fontSize}px 'DejaVu Sans Mono'`;
-        const m = tmpCtx.measureText(element.text);
+        const tm = tmpCtx.measureText(text);
         tmpCtx.fillText(
-          element.text,
-          (imgW - m.width) / 2,
+          text,
+          (imgW - tm.width) / 2,
           printAbove
             ? fontSize
-            : barY + heightDots + textMargin
+            : barY + heightDots + textMargin + fontSize - 2
         );
       }
       const rotated = rotateCanvas(tmpCanvas, orient);
@@ -544,17 +764,34 @@ class BarcodeDrawer extends BaseDrawer {
       elX, barY, imgW, heightDots);
 
     if (fontSize > 0) {
-      ctx.save();
-      ctx.fillStyle = "black";
-      ctx.font = `${fontSize}px 'DejaVu Sans Mono'`;
-      const metrics = ctx.measureText(element.text);
-      const tx = elX + (imgW - metrics.width) / 2;
-      ctx.fillText(
-        element.text,
-        tx,
-        barY + heightDots + textMargin
-      );
-      ctx.restore();
+      if (bf) {
+        // Bitmap font rendering (pixel-perfect Zebra glyphs)
+        const textY = printAbove ? elY : barY + heightDots + bf.margin;
+        let binTotalW = 0;
+        for (let ci = 0; ci < text.length; ci++) {
+          const g = bf.chars[text[ci]];
+          binTotalW += (ci < text.length - 1) ? g.a : g.bw;
+        }
+        let bx = elX + (imgW - binTotalW) / 2;
+        for (let ci = 0; ci < text.length; ci++) {
+          const g = bf.chars[text[ci]];
+          drawGrayGlyph(ctx, g, Math.round(bx) - g.dx, textY, bf.height, imgW);
+          bx += g.a;
+        }
+      } else {
+        // Canvas font fallback at correct size
+        ctx.save();
+        ctx.fillStyle = "black";
+        ctx.font = `${fontSize}px 'DejaVu Sans Mono'`;
+        const metrics = ctx.measureText(text);
+        const tx = elX + (imgW - metrics.width) / 2;
+        ctx.fillText(
+          text,
+          tx,
+          printAbove ? elY + fontSize : barY + heightDots + textMargin + fontSize - 2
+        );
+        ctx.restore();
+      }
     }
   }
 }
