@@ -612,11 +612,46 @@ class BarcodeDrawer extends BaseDrawer {
         tmpCtx.fillRect(bar.x, barY, bar.w, heightDots);
       }
       if (fontSize > 0) {
-        tmpCtx.fillStyle = "black";
-        tmpCtx.font = `${fontSize}px 'DejaVu Sans Mono'`;
-        const m = tmpCtx.measureText(encoded);
-        tmpCtx.fillText(encoded, (width - m.width) / 2,
-          printAbove ? fontSize : barY + heightDots + textMargin + fontSize - 2);
+        const bf39 = element._code39.bf;
+        if (bf39) {
+          // Bitmap font rendering on temp canvas (same as Normal path)
+          const textY = printAbove ? 0 : barY + heightDots + bf39.margin;
+          const useSB = element._code39.useSideBearings !== false;
+          let binTotalW = 0;
+          if (useSB) {
+            for (let ci = 0; ci < encoded.length; ci++) {
+              const g = bf39.chars[encoded[ci]];
+              const nextG = ci < encoded.length - 1 ? bf39.chars[encoded[ci + 1]] : null;
+              binTotalW += nextG ? g.bw + g.rb + nextG.lb : g.bw;
+            }
+          } else {
+            for (let ci = 0; ci < encoded.length; ci++) {
+              const g = bf39.chars[encoded[ci]];
+              binTotalW += (ci < encoded.length - 1) ? g.a : g.bw;
+            }
+          }
+          const narrow = element.moduleWidth || 2;
+          const trailing = element._code39.trailingNarrow !== undefined
+            ? element._code39.trailingNarrow : narrow;
+          const centerW = useSB ? width + trailing : width;
+          let bx = (centerW - binTotalW) / 2;
+          for (let ci = 0; ci < encoded.length; ci++) {
+            const g = bf39.chars[encoded[ci]];
+            drawGrayGlyph(tmpCtx, g, Math.round(bx) - g.dx, textY, bf39.height, width);
+            if (useSB) {
+              const nextG = ci < encoded.length - 1 ? bf39.chars[encoded[ci + 1]] : null;
+              bx += nextG ? g.bw + g.rb + nextG.lb : g.bw;
+            } else {
+              bx += g.a;
+            }
+          }
+        } else {
+          tmpCtx.fillStyle = "black";
+          tmpCtx.font = `${fontSize}px 'DejaVu Sans Mono'`;
+          const m = tmpCtx.measureText(encoded);
+          tmpCtx.fillText(encoded, (width - m.width) / 2,
+            printAbove ? fontSize : barY + heightDots + textMargin + fontSize - 2);
+        }
       }
       // Pixel-perfect rotation (avoids text mirroring from canvas transforms)
       const rotated = rotateCanvas(tmpCanvas, orient);
@@ -747,16 +782,35 @@ class BarcodeDrawer extends BaseDrawer {
       const barY = printAbove && fontSize ? textAreaH : 0;
       tmpCtx.drawImage(barsImg, 0, barY, imgW, heightDots);
       if (fontSize > 0) {
-        tmpCtx.fillStyle = "black";
-        tmpCtx.font = `${fontSize}px 'DejaVu Sans Mono'`;
-        const tm = tmpCtx.measureText(text);
-        tmpCtx.fillText(
-          text,
-          (imgW - tm.width) / 2,
-          printAbove
-            ? fontSize
-            : barY + heightDots + textMargin + fontSize - 2
-        );
+        if (bf) {
+          // Bitmap font rendering on temp canvas (same as Normal path)
+          const textY = printAbove ? 0 : barY + heightDots + bf.margin;
+          let binTotalW = 0;
+          for (let ci = 0; ci < text.length; ci++) {
+            const g = bf.chars[text[ci]];
+            const nextG = ci < text.length - 1 ? bf.chars[text[ci + 1]] : null;
+            binTotalW += nextG ? g.bw + g.rb + nextG.lb : g.bw;
+          }
+          const centerW = imgW + (centerExtra || 0);
+          let bx = (centerW - binTotalW) / 2;
+          for (let ci = 0; ci < text.length; ci++) {
+            const g = bf.chars[text[ci]];
+            const nextG = ci < text.length - 1 ? bf.chars[text[ci + 1]] : null;
+            drawGrayGlyph(tmpCtx, g, Math.round(bx) - g.dx, textY, bf.height, imgW);
+            bx += nextG ? g.bw + g.rb + nextG.lb : g.bw;
+          }
+        } else {
+          tmpCtx.fillStyle = "black";
+          tmpCtx.font = `${fontSize}px 'DejaVu Sans Mono'`;
+          const tm = tmpCtx.measureText(text);
+          tmpCtx.fillText(
+            text,
+            (imgW - tm.width) / 2,
+            printAbove
+              ? fontSize
+              : barY + heightDots + textMargin + fontSize - 2
+          );
+        }
       }
       const rotated = rotateCanvas(tmpCanvas, orient);
       const dx = isBaseline ? (orient === "R" || orient === "I" ? -rotated.width : 0) : 0;
