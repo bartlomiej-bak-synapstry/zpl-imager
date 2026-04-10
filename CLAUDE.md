@@ -37,7 +37,7 @@ Pipeline: `ZPL string` → `ZplAnalyzer` (parser) → `elements[]` → `Drawers`
 - ^FT = baseline origin, absolute (NOT offset by ^LH)
 - ^GB z ^FT: `boxY = pos.y - effH`
 
-## Status testów (15/30 passing, 2026-04-10)
+## Status testów (30/30 passing, 2026-04-10)
 
 | Test | Diff px | Typ | Status |
 |------|---------|-----|--------|
