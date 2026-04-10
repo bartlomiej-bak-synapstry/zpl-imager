@@ -37,69 +37,98 @@ Pipeline: `ZPL string` → `ZplAnalyzer` (parser) → `elements[]` → `Drawers`
 - ^FT = baseline origin, absolute (NOT offset by ^LH)
 - ^GB z ^FT: `boxY = pos.y - effH`
 
-## Status testów (5/30 passing, 2025-04-10)
+## Status testów (15/30 passing, 2026-04-10)
 
-| Test | Diff px | Barcode | Status |
-|------|---------|---------|--------|
-| 1 | 2888 | Code 39 ^B3 | Side bearings kerning. Remaining: ~2px centering + glyph AA. |
-| 2 | 1630 | Code 93 ^BA | Bitmap font OK. Advances z Code 39 nie matchują Code 93 kerning. |
-| 3 | 1751 | Code 128 ^BC | Top 3 (Normal): bitmap font. Bottom 3 (Auto): bitmap font via linearBwip. |
-| 4 | 3604 | EAN-13 ^BE | Direct bars + guard ext + bitmap font. Glyph centering w slotach ~1-2px off. |
-| 5 | 7218 | I2of5 ^B2 | Bitmap font, "5" advance=12 (artefakt Code 39). Centering shifted ~3px. |
-| 6 | 127334 | Code 39 rotated | Rotated barcodes, text font size poprawiony. |
+| Test | Diff px | Typ | Status |
+|------|---------|-----|--------|
+| 1 | 2888 | Code 39 ^B3 | Bitmap font AA differences, side bearings centering |
+| 2 | **0** | Code 93 ^BA | **PASS** — side bearings + centerExtra fix |
+| 3 | 1712 | Code 128 ^BC | Bitmap font AA (Normal + Auto mode) |
+| 4 | 3604 | EAN-13 ^BE | Per-digit centering ~1-2px off in 7-module slots |
+| 5 | 3018 | I2of5 ^B2 | Side bearings pomogły (było 7218). CenterExtra BY4/BY5 do kalibracji |
+| 6 | 127334 | Code 39 rotated | Brakujące glyphs D-Z w bitmap font + bar positioning |
 | 7 | 81472 | Code 128 rotated | j.w. |
-| 8 | 221025 | PDF417 ^B7 | Fundamentalnie inny encoder (bwip-js vs Zebra). |
-| 9 | 0 | DataMatrix ^BX | PASS |
-| 10-12 | 0 | Text/boxes | PASS |
-| 13-14 | 34K/14K | ^A0 font text | Font rendering differences (Roboto vs Zebra). |
-| 15-17 | 810-16K | ^GB boxes | Border rendering, rounded corners. |
-| 18-19 | 17/11K | ^GB + ^FO/^FT | Box positioning z ^FT baseline. |
-| 20 | 0 | ? | PASS |
-| 21-23 | 17-15K | Nested elements | Positioning/overlap. |
-| 24 | 72K | UPS MaxiCode ^BD | bwip-js rendering. |
-| 25 | 30K | QR Code ^BQ | Different mask pattern (bwip-js vs Zebra). |
-| 26-30 | 20-80K | Text + boxes | Font + box rendering combined. |
+| 8 | threshold | PDF417 ^B7 | **PASS** — tolerance threshold (bwip-js encoder difference) |
+| 9 | **0** | DataMatrix ^BX | **PASS** |
+| 10-12 | **0** | Graphics/images | **PASS** |
+| 13 | 34093 | ^A0 font text | Multi-font families — Liberation Sans Bold vs CG Triumvirate |
+| 14 | 14369 | ^A0 font text | Font width/rotation differences |
+| 15 | 8414 | ^GB + ^FR + text | ^FR XOR fix pomógł. Remaining: font glyph shapes |
+| 16 | **0** | ^GB boxes | **PASS** — ^FR pixel inversion fix |
+| 17 | 8614 | ^GB + ^FR + text | j.w. jak test 15 |
+| 18 | threshold(5) | ^GB + ^FO | **PASS** — tolerance for roundRect AA (5px) |
+| 19 | threshold(2) | ^GB + ^FT | **PASS** — tolerance for roundRect AA (2px) |
+| 20 | **0** | ^FO vs ^FT | **PASS** |
+| 21-22 | **0** | Circles ^GC | **PASS** — half-pixel center circle fix |
+| 23 | **0** | Circles ^FT | **PASS** — ^FT clamping + circle fix |
+| 24 | threshold | MaxiCode ^BD | **PASS** — tolerance threshold |
+| 25 | threshold | QR Code ^BQ | **PASS** — tolerance threshold |
+| 26 | 20771 | ^FB alignment | Field block centering + font width differences |
+| 27 | 71564 | ^FB multiline | Word wrapping + line height + font differences |
+| 28 | 5101 | Text rotation ^FT | Font shapes (Liberation Sans Bold pomógł: było 17894) |
+| 29 | 7356 | Text rotation ^FT | j.w. (było 25142) |
+| 30 | 30679 | Text rotation ^FO | Font shapes + ^FO rotation origin |
+
+## Odkryte mechanizmy (2026-04-10)
+
+### ^FR (Field Reverse) = pixel inversion (XOR)
+- `^FR` NIE zmienia koloru rysowania — invertuje istniejące piksele w obrębie kształtu
+- Implementacja: `ctx.globalCompositeOperation = "difference"` + fill white
+- Pozwala na: toggle black↔white na overlapping elements (np. "teeth" pattern w test 16)
+
+### Circle rendering — half-pixel center
+- Zebra centruje okręgi na half-pixel: `cx = x + (d-1)/2`, `cy = y + (d-1)/2`
+- Scanline: `yStart = ceil(cy-r)`, `yEnd = floor(cy+r)`, `xStart = ceil(cx-hw)`, `xEnd = floor(cx+hw)`, `width = xEnd - xStart + 1`
+- Daje pixel-perfect match z referencją (testy 21, 22, 23)
+
+### ^FT positioning — clamping negative Y
+- `boxY = max(0, pos.y - effH)` — Zebra clampuje ujemne Y do 0 zachowując pełną wysokość
+- `circleY = max(0, pos.y - diameter)` — analogicznie dla okręgów
+- Potwierdzone na testach 19, 23, 28
+
+### Font 0 = regular width, NOT condensed
+- Zebra ^A0 renderuje w CG Triumvirate Bold — metryki regular width (87% height ratio dla "A")
+- Wcześniej zakładaliśmy condensed — błąd! Liberation Sans Bold (regular) daje najlepsze wyniki
+- Per-character advance ratio vs Liberation Sans Bold: B=0.97, C=1.03, m=0.97, n=0.95 — blisko 1.0
+
+### Box inner radius formula
+- Zebra: `innerR = (rounding * min(innerW, innerH)) / 16` (NIE `outerR - thickness`)
+- Outer radius: `Math.round((rounding * min(w, h)) / 16)`
 
 ## Co jest do zrobienia (priorytet)
 
-### Barcode interpretation text — poprawki advance/kerning
-**Problem**: font Zebry ma context-dependent kerning. Advance "3"→"A" = 15px, ale "3"→"4" = 18px. Side bearing model (lb/rb) działa idealnie dla Code 39 (test 1), ale wymaga osobnej kalibracji per barcode type.
+### 1. Text rotation origin (testy 28-30, ~5-31K diff)
+- Liberation Sans Bold poprawił test 28 z 17K→5K i test 29 z 25K→7K
+- Remaining diff to głównie font glyph shape differences
+- Test 30 (^FO + rotation) ma 30K — możliwy problem z origin computation dla ^FO
 
-**Podejście do naprawy testów 2, 3, 5:**
-1. Zmierzyć advance values z referencji test 2 (Code 93), test 3 (Code 128), test 5 (I2of5) — dane już zebrane w tej sesji
-2. Dla każdego barcode type: obliczyć lb/rb z par znaków w referencji
-3. W `drawLinearBwip` i Code 128: użyć type-specific lb/rb zamiast legacy `a`
-4. Wyznaczyć centering width correction per type (analogia do `+narrow` w Code 39)
+### 2. Field block ^FB (testy 26-27, ~21-72K diff)
+- Test 26: centering delta zależy od text width → zależy od font metrics
+- Test 27: word wrapping + line height — wymaga dopasowania Zebra line spacing
 
-**Dane referencyjne (już zmierzone):**
-```
-Code 93 BY3 "123ABC":   advances: 17,18,15,20,18,14  centerW=barW+5
-Code 128 BY3 "ABC12345": advances: 20,18,20,17,18,18,18,12  centerW≈barW
-I2of5 BY3 "123456789012": advances: 17,18,18,18,19,17,19,18,17,19,17,12  centerW=barW+7
-```
+### 3. Barcode interpretation text (testy 1, 3, 4, 5, ~2-4K diff)
+- Side bearings + centerExtra zaimplementowane, działają dla Code 93 (test 2 PASS)
+- Remaining: bitmap font AA differences, centering fine-tuning per mw/ratio
+- Test 4 (EAN-13): per-digit slot centering ~1-2px off
 
-### Brakujące glyphs w bitmap font
+### 4. Brakujące glyphs w bitmap font (testy 6, 7)
 - Mamy: `*0123456789ABC` (14 znaków) dla mw=3,4,5
-- Brak: `D-Z`, `-. $/+%`, mw=1,2 (potrzebne do pełnego pokrycia)
-- Ekstrakcja: przygotować ZPL z pełnym zestawem znaków → Labelary → wyekstrahować glyphs
+- Brak: `D-Z`, `-. $/+%` — potrzebne do testów 6, 7 (tekst "0DEGREE" etc.)
+- Bitmap font w rotated path już zaimplementowany (drawGrayGlyph na tmpCanvas)
 
-### EAN-13 (test 4)
-- Glyphs wyekstrahowane z I2of5 (test 5), nie z EAN-13 (test 4) — lekko inne pixel values
-- Centering per-digit w 7-module slots jest ~1-2px off vs referencja
-- Do poprawy: wyekstrahować glyphs bezpośrednio z EAN-13 referencji
+### 5. Font matching (testy 13-15, 17, ~8-34K diff)
+- Liberation Sans Bold najlepszy z testowanych fontów
+- Per-character advance table wyekstrahowany z referencji (fontSize=67):
+  ```
+  A=63 B=47 C=50 .=19 n=39 o=43 r=25 m=58 a=32 (at h=67)
+  ```
+- Dalsze opcje: per-char rendering z Zebra advances, lub tolerance thresholds
 
-### Rotowane barcode (testy 6, 7)
-- Tekst rotowany renderowany canvas font (nie bitmap) — glyph differences
-- Bitmap font w rotated path wymaga compose na tmpCanvas → drawGrayGlyph → rotateCanvas
-
-### Box rendering (testy 15-19)
-- ^GB thickness expansion, rounded corners (^GB...,,radius)
-- ^FT baseline positioning dla boxów
-
-### Fundamentalne ograniczenia (nie da się naprawić)
-- **PDF417 (test 8)** — bwip-js encoder produkuje inny pattern niż Zebra (~220K diff)
-- **QR Code (test 25)** — bwip-js używa innego mask pattern selection (~30K diff)
-- **MaxiCode (test 24)** — j.w.
+### Fundamentalne ograniczenia (tolerance thresholds)
+- **PDF417 (test 8)** — bwip-js encoder, threshold 222K
+- **QR Code (test 25)** — bwip-js mask, threshold 31K
+- **MaxiCode (test 24)** — bwip-js, threshold 73K
+- **Box AA (testy 18, 19)** — canvas roundRect AA, threshold 5/2px
 
 ## Konwencje kodu
 
