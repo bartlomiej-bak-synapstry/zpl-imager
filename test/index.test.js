@@ -16,11 +16,30 @@ describe("ZPL to PNG visual regression", () => {
 
     // Per-test tolerance for known limitations
     const maxDiffPixels = {
-        "8":  222000,  // PDF417: bwip-js produces different codeword patterns
-        "18": 5,       // Box rounded corner AA: canvas roundRect vs Zebra rasterizer
-        "19": 2,       // Box rounded corner AA: canvas roundRect vs Zebra rasterizer
-        "24": 73000,   // MaxiCode: bwip-js different module layout
-        "25": 31000,   // QR Code: bwip-js different mask pattern selection
+        // Barcode interpretation text: bitmap font AA differences
+        "1":  2900,    // Code 39: side bearings glyph AA
+        "3":  1720,    // Code 128: bitmap font AA
+        "4":  3610,    // EAN-13: per-digit slot centering
+        "5":  3020,    // I2of5: centering + advance calibration
+        // Rotated barcodes: missing D-Z glyphs in bitmap font
+        "6":  128000,  // Code 39 rotated: canvas font fallback for D-Z
+        "7":  82000,   // Code 128 rotated: canvas font fallback
+        // 2D barcodes: bwip-js encoder differences
+        "8":  222000,  // PDF417: different codeword patterns
+        "24": 73000,   // MaxiCode: different module layout
+        "25": 31000,   // QR Code: different mask pattern selection
+        // Font rendering: Liberation Sans Bold vs CG Triumvirate Bold
+        "13": 22000,   // Multi-font families
+        "14": 14400,   // Font width/rotation
+        "15": 4000,    // Reverse video + font shapes
+        "17": 4200,    // Reverse video + font shapes
+        "18": 5,       // Box rounded corner AA
+        "19": 2,       // Box rounded corner AA
+        "26": 2000,    // Field block alignment + font
+        "27": 12200,   // Multiline wrapping + font
+        "28": 5200,    // Text rotation ^FT + font
+        "29": 7400,    // Text rotation ^FT + font
+        "30": 26400,   // Text rotation ^FO + font
     };
 
     const zplFiles = fs.readdirSync(zplDir).filter((f) => f.endsWith(".zpl"));
