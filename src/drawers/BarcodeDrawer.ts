@@ -530,7 +530,12 @@ class BarcodeDrawer extends BaseDrawer {
       tmpCtx.imageSmoothingEnabled = false;
       tmpCtx.drawImage(image, 0, 0, w, h);
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "I" ? -rotated.width : 0) : 0;
+      // ^FT baseline: anchor at "base of barcode" rotates with content
+      // N: bottom-left → shift up (handled above: elY -= totalH)
+      // R: rotates to top-left → no offset
+      // I: rotates to top-right → shift left by width
+      // B: rotates to bottom-right → shift left AND up
+      const dx = isBaseline ? (orient === "I" || orient === "B" ? -rotated.width : 0) : 0;
       const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
       ctx.drawImage(rotated, x + dx, y + dy);
     }
@@ -667,7 +672,12 @@ class BarcodeDrawer extends BaseDrawer {
       }
       // Pixel-perfect rotation (avoids text mirroring from canvas transforms)
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "I" ? -rotated.width : 0) : 0;
+      // ^FT baseline: anchor at "base of barcode" rotates with content
+      // N: bottom-left → shift up (handled above: elY -= totalH)
+      // R: rotates to top-left → no offset
+      // I: rotates to top-right → shift left by width
+      // B: rotates to bottom-right → shift left AND up
+      const dx = isBaseline ? (orient === "I" || orient === "B" ? -rotated.width : 0) : 0;
       const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
       // Compensate for barOffsetX: after rotation the offset maps to different axes
       let drawX = elX + dx;
@@ -703,7 +713,12 @@ class BarcodeDrawer extends BaseDrawer {
         this.drawEAN13Text(tmpCtx, 0, heightDots + textMargin, digits, m, fontSize);
       }
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "I" ? -rotated.width : 0) : 0;
+      // ^FT baseline: anchor at "base of barcode" rotates with content
+      // N: bottom-left → shift up (handled above: elY -= totalH)
+      // R: rotates to top-left → no offset
+      // I: rotates to top-right → shift left by width
+      // B: rotates to bottom-right → shift left AND up
+      const dx = isBaseline ? (orient === "I" || orient === "B" ? -rotated.width : 0) : 0;
       const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
       ctx.drawImage(rotated, elX + dx, elY + dy);
       return;
@@ -833,7 +848,12 @@ class BarcodeDrawer extends BaseDrawer {
         }
       }
       const rotated = rotateCanvas(tmpCanvas, orient);
-      const dx = isBaseline ? (orient === "I" ? -rotated.width : 0) : 0;
+      // ^FT baseline: anchor at "base of barcode" rotates with content
+      // N: bottom-left → shift up (handled above: elY -= totalH)
+      // R: rotates to top-left → no offset
+      // I: rotates to top-right → shift left by width
+      // B: rotates to bottom-right → shift left AND up
+      const dx = isBaseline ? (orient === "I" || orient === "B" ? -rotated.width : 0) : 0;
       const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
       ctx.drawImage(rotated, elX + dx, elY + dy);
       ctx.restore();
