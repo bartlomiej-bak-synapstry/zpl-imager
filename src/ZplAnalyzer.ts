@@ -172,8 +172,8 @@ export function analyze(zplString: string): ZplLabel[] {
         // create box element
         const pos = printer.nextPosition || { x: 0, y: 0 };
         const originType = pos.originType || "top-left";
-        // ^FT positions the bottom-left of the box
-        const boxY = originType === "baseline" ? pos.y - effH : pos.y;
+        // ^FT positions the bottom-left of the box; Zebra clamps negative Y to 0
+        const boxY = originType === "baseline" ? Math.max(0, pos.y - effH) : pos.y;
         currentElements.push({
           type: "box",
           x: pos.x,
@@ -383,7 +383,7 @@ export function analyze(zplString: string): ZplLabel[] {
         const c = parts.length > 2 ? parts[2].trim().toUpperCase() : "B";
         const pos = printer.nextPosition || { x: 0, y: 0 };
         const circleOriginType = pos.originType || "top-left";
-        const circleY = circleOriginType === "baseline" ? pos.y - d : pos.y;
+        const circleY = circleOriginType === "baseline" ? Math.max(0, pos.y - d) : pos.y;
         currentElements.push({
           type: "circle",
           x: pos.x,

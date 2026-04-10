@@ -19,7 +19,7 @@ class BoxDrawer extends BaseDrawer {
       (color && color.toUpperCase() === "F") ||
       t >= Math.min(width, height) / 2;
 
-    const r = rounding ? (rounding * Math.min(width, height)) / 16 : 0;
+    const r = rounding ? Math.round((rounding * Math.min(width, height)) / 16) : 0;
 
     ctx.fillStyle = drawColor;
 
@@ -37,9 +37,11 @@ class BoxDrawer extends BaseDrawer {
         // Rounded border: use clip path to draw only the border region
         ctx.beginPath();
         ctx.roundRect(x, y, width, height, r);
-        const innerR = Math.max(0, r - t);
+        const innerW = width - 2 * t;
+        const innerH = height - 2 * t;
+        const innerR = rounding ? Math.max(0, (rounding * Math.min(innerW, innerH)) / 16) : 0;
         // Cut out inner area using evenodd fill rule
-        ctx.roundRect(x + t, y + t, width - 2 * t, height - 2 * t, innerR);
+        ctx.roundRect(x + t, y + t, innerW, innerH, innerR);
         ctx.fill("evenodd");
       } else {
         // Draw 4 border rectangles (no interior clearing)

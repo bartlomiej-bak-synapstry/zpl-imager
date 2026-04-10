@@ -8,43 +8,50 @@ class CircleDrawer extends BaseDrawer {
 
   draw(ctx: any, element: any): void {
     const { x, y, diameter, thickness, color } = element;
-    const radius = diameter / 2;
-    const cx = x + radius;
-    const cy = y + radius;
+    const r = diameter / 2;
+    // Half-pixel center for even diameters matches Zebra's circle rendering
+    const cx = x + (diameter - 1) / 2;
+    const cy = y + (diameter - 1) / 2;
 
     const t = thickness || 1;
-    const shouldFill = t === 0 || color === "F" || t >= radius;
+    const shouldFill = t === 0 || color === "F" || t >= r;
 
     if (shouldFill) {
-      // Filled circle: pixel-perfect using distance check
-      this.fillCircle(ctx, cx, cy, radius);
+      this.fillCircle(ctx, cx, cy, r);
     } else {
-      // Border circle: fill outer, clear inner
-      this.fillCircle(ctx, cx, cy, radius);
-      this.clearCircle(ctx, cx, cy, radius - t);
+      this.fillCircle(ctx, cx, cy, r);
+      this.clearCircle(ctx, cx, cy, r - t);
     }
   }
 
   private fillCircle(ctx: any, cx: number, cy: number, radius: number): void {
     ctx.fillStyle = "black";
-    const r = Math.round(radius);
-    const icx = Math.round(cx);
-    const icy = Math.round(cy);
-    for (let dy = -r; dy <= r; dy++) {
-      const halfWidth = Math.round(Math.sqrt(r * r - dy * dy));
-      ctx.fillRect(icx - halfWidth, icy + dy, halfWidth * 2, 1);
+    const r2 = radius * radius;
+    const yStart = Math.ceil(cy - radius);
+    const yEnd = Math.floor(cy + radius);
+    for (let py = yStart; py <= yEnd; py++) {
+      const dy = py - cy;
+      const hw = Math.sqrt(r2 - dy * dy);
+      const xStart = Math.ceil(cx - hw);
+      const xEnd = Math.floor(cx + hw);
+      const width = xEnd - xStart + 1;
+      if (width > 0) ctx.fillRect(xStart, py, width, 1);
     }
   }
 
   private clearCircle(ctx: any, cx: number, cy: number, radius: number): void {
     if (radius <= 0) return;
     ctx.fillStyle = "white";
-    const r = Math.round(radius);
-    const icx = Math.round(cx);
-    const icy = Math.round(cy);
-    for (let dy = -r; dy <= r; dy++) {
-      const halfWidth = Math.round(Math.sqrt(r * r - dy * dy));
-      ctx.fillRect(icx - halfWidth, icy + dy, halfWidth * 2, 1);
+    const r2 = radius * radius;
+    const yStart = Math.ceil(cy - radius);
+    const yEnd = Math.floor(cy + radius);
+    for (let py = yStart; py <= yEnd; py++) {
+      const dy = py - cy;
+      const hw = Math.sqrt(r2 - dy * dy);
+      const xStart = Math.ceil(cx - hw);
+      const xEnd = Math.floor(cx + hw);
+      const width = xEnd - xStart + 1;
+      if (width > 0) ctx.fillRect(xStart, py, width, 1);
     }
   }
 }
