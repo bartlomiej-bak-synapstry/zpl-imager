@@ -501,7 +501,6 @@ export function analyze(zplString: string): ZplLabel[] {
             const fontHeight = font.height || 10;
             let scaleX = 1;
             if (font.name && font.name.toString().toUpperCase() === "0") {
-              scaleX = 0.65;
               if (font.width && font.width > 0 && font.height && font.height > 0) {
                 scaleX = font.width / font.height;
               }
@@ -541,22 +540,9 @@ export function analyze(zplString: string): ZplLabel[] {
               block.lines && block.lines > 0
                 ? Math.min(block.lines, actualLineCount)
                 : actualLineCount;
-            // Compute vertical offset to centre the lines within the block if
-            // the number of allowed lines exceeds the number of wrapped lines.
-            let offsetY = 0;
-            if (
-              block.lines &&
-              block.lines > 0 &&
-              block.lines > actualLineCount
-            ) {
-              const totalHeight =
-                actualLineCount * (fontHeight + block.lineSpacing) -
-                block.lineSpacing;
-              const availableHeight =
-                block.lines * (fontHeight + block.lineSpacing) -
-                block.lineSpacing;
-              offsetY = Math.floor((availableHeight - totalHeight) / 2);
-            }
+            // Zebra does NOT vertically centre text in field blocks —
+            // text starts from the field origin position regardless of line count.
+            const offsetY = 0;
             for (let i = 0; i < maxLines; i++) {
               const line = wrappedLines[i];
               // indent subsequent lines by the hanging indent

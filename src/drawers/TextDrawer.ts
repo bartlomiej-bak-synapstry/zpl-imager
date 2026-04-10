@@ -43,7 +43,10 @@ class TextDrawer extends BaseDrawer {
     let baseX = x;
     let baseY = y;
     if (!originType || originType === "top-left") {
-      baseY = y + fontSize;
+      // Position baseline using actual font ascent metrics (not full fontSize)
+      const metrics = ctx.measureText("M");
+      const ascent = metrics.actualBoundingBoxAscent || fontSize * 0.72;
+      baseY = y + ascent;
     }
     const sx = scaleX || 1;
     if (element.blockWidth && element.blockAlign) {
