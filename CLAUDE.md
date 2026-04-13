@@ -37,7 +37,7 @@ Pipeline: `ZPL string` → `ZplAnalyzer` (parser) → `elements[]` → `Drawers`
 - ^FT = baseline origin, absolute (NOT offset by ^LH)
 - ^GB z ^FT: `boxY = pos.y - effH`
 
-## Status testów (30/30 passing, 2026-04-10)
+## Status testów (30/30 passing, 2026-04-13)
 
 | Test | Diff px | Typ | Status |
 |------|---------|-----|--------|
@@ -45,29 +45,27 @@ Pipeline: `ZPL string` → `ZplAnalyzer` (parser) → `elements[]` → `Drawers`
 | 2 | **0** | Code 93 ^BA | **PASS** — side bearings + centerExtra fix |
 | 3 | 1712 | Code 128 ^BC | Bitmap font AA (Normal + Auto mode) |
 | 4 | 3604 | EAN-13 ^BE | Per-digit centering ~1-2px off in 7-module slots |
-| 5 | 3018 | I2of5 ^B2 | Side bearings pomogły (było 7218). CenterExtra BY4/BY5 do kalibracji |
-| 6 | 127334 | Code 39 rotated | Brakujące glyphs D-Z w bitmap font + bar positioning |
-| 7 | 81472 | Code 128 rotated | j.w. |
+| 5 | 3018 | I2of5 ^B2 | Side bearings pomogły. CenterExtra BY4/BY5 do kalibracji |
+| 6 | 5433 | Code 39 rotated | Bitmap glyphs D-Z brakują w zebraFont |
+| 7 | 3622 | Code 128 rotated | j.w. |
 | 8 | threshold | PDF417 ^B7 | **PASS** — tolerance threshold (bwip-js encoder difference) |
-| 9 | **0** | DataMatrix ^BX | **PASS** |
-| 10-12 | **0** | Graphics/images | **PASS** |
-| 13 | 34093 | ^A0 font text | Multi-font families — Liberation Sans Bold vs CG Triumvirate |
-| 14 | 14369 | ^A0 font text | Font width/rotation differences |
-| 15 | 8414 | ^GB + ^FR + text | ^FR XOR fix pomógł. Remaining: font glyph shapes |
+| 9-12 | **0** | DataMatrix/Graphics | **PASS** |
+| 13 | 20525 | ^A0 multi-font | Liberation Sans Bold vs CG Triumvirate (improved by cap-height fix) |
+| 14 | 14369 | ^A0 ^FWI rotation | I rotation positioning needs fix |
+| 15 | 585 | ^GB + ^FR + text | tight threshold |
 | 16 | **0** | ^GB boxes | **PASS** — ^FR pixel inversion fix |
-| 17 | 8614 | ^GB + ^FR + text | j.w. jak test 15 |
+| 17 | 785 | ^GB + ^FR + text | tight threshold |
 | 18 | threshold(5) | ^GB + ^FO | **PASS** — tolerance for roundRect AA (5px) |
 | 19 | threshold(2) | ^GB + ^FT | **PASS** — tolerance for roundRect AA (2px) |
 | 20 | **0** | ^FO vs ^FT | **PASS** |
-| 21-22 | **0** | Circles ^GC | **PASS** — half-pixel center circle fix |
-| 23 | **0** | Circles ^FT | **PASS** — ^FT clamping + circle fix |
+| 21-23 | **0** | Circles ^GC/^FT | **PASS** — half-pixel center circle fix |
 | 24 | threshold | MaxiCode ^BD | **PASS** — tolerance threshold |
 | 25 | threshold | QR Code ^BQ | **PASS** — tolerance threshold |
-| 26 | 20771 | ^FB alignment | Field block centering + font width differences |
-| 27 | 71564 | ^FB multiline | Word wrapping + line height + font differences |
-| 28 | 5101 | Text rotation ^FT | Font shapes (Liberation Sans Bold pomógł: było 17894) |
-| 29 | 7356 | Text rotation ^FT | j.w. (było 25142) |
-| 30 | 30679 | Text rotation ^FO | Font shapes + ^FO rotation origin |
+| 26 | 1709 | ^FB alignment | Improved by cap-height fix (było 20771) |
+| 27 | 8621 | ^FB multiline | Improved by cap-height fix (było 71564) |
+| 28 | 895 | Text rotation ^FT | **R/B swap fix**: 5101→895 |
+| 29 | 1451 | Text rotation ^FT | **R/B swap fix**: 7356→1451 |
+| 30 | 25300 | Text rotation ^FO | ^FO + rotation origin geometry needs fix |
 
 ## Odkryte mechanizmy (2026-04-10)
 
@@ -95,12 +93,28 @@ Pipeline: `ZPL string` → `ZplAnalyzer` (parser) → `elements[]` → `Drawers`
 - Zebra: `innerR = (rounding * min(innerW, innerH)) / 16` (NIE `outerR - thickness`)
 - Outer radius: `Math.round((rounding * min(w, h)) / 16)`
 
+### Text baseline = cap-height ratio (per fontSize)
+- Zebra positions baseline tak żeby cap_top = y_top (^FO + ^LH)
+- Cap-height ratio różni się od fontSize:
+  - fontSize ≤ 70: ratio = 0.70 (np. test 15: cap_h=49 dla fontSize=70)
+  - fontSize ≥ 80: ratio = 0.72 (np. test 27: cap_h=72 dla fontSize=100)
+- Implementacja: `baseY = y + Math.round(fontSize * ratio)` w TextDrawer.ts
+- Litery typu `$`, `j` extenders mogą wystawać NAD y_top — to zgodne z Zebra
+
+### Text rotation R/B mapping
+- ZPL R = 90 CW (clockwise) → text reads top-to-bottom going DOWN: `rotate(+π/2)`
+- ZPL B = 270 CW (= 90 CCW) → text reads bottom-to-top going UP: `rotate(-π/2)`
+- Wcześniej miałem zamienione miejscami — fix dał -4K do -6K diff dla testów 28, 29
+
 ## Co jest do zrobienia (priorytet)
 
-### 1. Text rotation origin (testy 28-30, ~5-31K diff)
-- Liberation Sans Bold poprawił test 28 z 17K→5K i test 29 z 25K→7K
-- Remaining diff to głównie font glyph shape differences
-- Test 30 (^FO + rotation) ma 30K — możliwy problem z origin computation dla ^FO
+### 1. Text rotation origin (testy 14, 30 — ^FWI / ^FO + I)
+- Test 28, 29 (^FT + R/B/I): wyfixowane przez R/B swap. Diff ~1K każdy.
+- Test 30 (^FO + R/I/B) ma 25K — Zebra używa ^FO+rotation w sposób który nie jest prostą rotacją bbox.
+  Dla I (180): tekst wygląda jak rotated wokół środka pola, NIE wokół FO origin. 
+  Próbowałem `baseX = x+textW, baseY = y` ale zwiększyło diff (35K).
+- Test 14 (^FWI): wszystkie pola I-rotated. Tylko Font8 widoczne, reszta poza canvas.
+  Wymaga podobnego fixu jak test 30.
 
 ### 2. Field block ^FB (testy 26-27, ~21-72K diff)
 - Test 26: centering delta zależy od text width → zależy od font metrics

@@ -49,10 +49,10 @@ class TextDrawer extends BaseDrawer {
     let baseX = x;
     let baseY = y;
     if (!originType || originType === "top-left") {
-      // Position baseline using actual font ascent metrics (not full fontSize)
-      const metrics = ctx.measureText("M");
-      const ascent = metrics.actualBoundingBoxAscent || fontSize * 0.72;
-      baseY = y + ascent;
+      // Zebra positions baseline so cap_top = y_top (^FO + ^LH).
+      // Cap-height ratio: ≤70px → 0.70, ≥80px → 0.72 (empirical).
+      const ratio = fontSize >= 80 ? 0.72 : 0.70;
+      baseY = y + Math.round(fontSize * ratio);
     }
     const sx = scaleX || 1;
     if (element.blockWidth && element.blockAlign) {
@@ -73,7 +73,7 @@ class TextDrawer extends BaseDrawer {
     };
     if (orientation === "R") {
       ctx.translate(baseX, baseY);
-      ctx.rotate(-Math.PI / 2);
+      ctx.rotate(Math.PI / 2);
       ctx.scale(sx, 1);
       drawText();
     } else if (orientation === "I") {
@@ -83,7 +83,7 @@ class TextDrawer extends BaseDrawer {
       drawText();
     } else if (orientation === "B") {
       ctx.translate(baseX, baseY);
-      ctx.rotate(Math.PI / 2);
+      ctx.rotate(-Math.PI / 2);
       ctx.scale(sx, 1);
       drawText();
     } else {

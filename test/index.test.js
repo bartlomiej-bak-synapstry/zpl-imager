@@ -29,17 +29,17 @@ describe("ZPL to PNG visual regression", () => {
         "24": 26000,   // MaxiCode: mode 3 fallback + AA hexagon approximation
         "25": 18000,   // QR Code: bwip-js different mask pattern (position fixed)
         // Font rendering: Liberation Sans Bold vs CG Triumvirate Bold
-        "13": 22000,   // Multi-font families
+        "13": 20600,   // Multi-font families (improved by ascent fix)
         "14": 14400,   // Font width/rotation
         "15": 600,     // Reverse video + font shapes (^FR XOR fix)
         "17": 800,     // Reverse video + font shapes (^FR XOR fix)
         "18": 5,       // Box rounded corner AA
         "19": 2,       // Box rounded corner AA
-        "26": 2000,    // Field block alignment + font
-        "27": 12200,   // Multiline wrapping + font
-        "28": 5200,    // Text rotation ^FT + font
-        "29": 7400,    // Text rotation ^FT + font
-        "30": 26400,   // Text rotation ^FO + font
+        "26": 1800,    // Field block alignment + font (improved by ascent fix)
+        "27": 8700,    // Multiline wrapping + font (improved by ascent fix)
+        "28": 1000,    // Text rotation ^FT (R/B swap fix: was 5200)
+        "29": 1500,    // Text rotation ^FT (R/B swap fix: was 7400)
+        "30": 25400,   // Text rotation ^FO + font
     };
 
     const zplFiles = fs.readdirSync(zplDir).filter((f) => f.endsWith(".zpl"));
