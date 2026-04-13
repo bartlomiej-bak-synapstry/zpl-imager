@@ -27,7 +27,7 @@ describe("ZPL to PNG visual regression", () => {
         // 2D barcodes: bwip-js encoder differences
         "8":  222000,  // PDF417: different codeword patterns
         "24": 73000,   // MaxiCode: different module layout
-        "25": 31000,   // QR Code: different mask pattern selection
+        "25": 18000,   // QR Code: bwip-js different mask pattern (position fixed)
         // Font rendering: Liberation Sans Bold vs CG Triumvirate Bold
         "13": 22000,   // Multi-font families
         "14": 14400,   // Font width/rotation

@@ -520,8 +520,10 @@ class BarcodeDrawer extends BaseDrawer {
     ctx.save();
     // Disable interpolation for pixel-perfect barcode scaling
     ctx.imageSmoothingEnabled = false;
+    // Zebra adds a 10-dot Y offset for QR codes (quiet zone above modules)
+    const qrYOffset = element.codeType === "qrcode" ? 10 : 0;
     if (orient === "N") {
-      const dy = isBaseline ? y - h : y;
+      const dy = (isBaseline ? y - h : y) + qrYOffset;
       ctx.drawImage(image, x, dy, w, h);
     } else {
       // Scale image to render size first, then rotate pixels
