@@ -356,6 +356,7 @@ class BarcodeDrawer extends BaseDrawer {
     // MaxiCode modes 2/3: restructure data for bwip-js
     // ZPL format: postal(9)country(3)service(3)message
     // bwip-js format: postal\x1Dcountry\x1Dservice\x1Dmessage
+    const originalText = barcodeText;
     if (element.codeType === "maxicode") {
       const mode = element.options?.mode;
       if ((mode === 2 || mode === 3) && barcodeText.length >= 15) {
@@ -435,7 +436,18 @@ class BarcodeDrawer extends BaseDrawer {
     }
 
     try {
-      const buffer = await bwipjs.toBuffer(opts);
+      let buffer: Buffer;
+      try {
+        buffer = await bwipjs.toBuffer(opts);
+      } catch (e: any) {
+        // MaxiCode mode 3 has strict validation in bwip-js (country/service must be digits).
+        // Zebra firmware is lenient. Fall back to mode 4 with original (unrestructured) text.
+        if (element.codeType === "maxicode" && opts.mode === 3) {
+          buffer = await bwipjs.toBuffer({ ...opts, mode: 4, text: originalText });
+        } else {
+          throw e;
+        }
+      }
       const img = await decodePng(buffer);
 
       if (is2D || element.codeType === "pdf417") {
@@ -443,6 +455,13 @@ class BarcodeDrawer extends BaseDrawer {
         if (qrMagnification > 0) {
           element.renderWidth = Math.round(img.width * qrMagnification / 2);
           element.renderHeight = Math.round(img.height * qrMagnification / 2);
+        } else if (element.codeType === "maxicode") {
+          // Zebra MaxiCode dimensions: 199x191 (vs bwip-js 210x200)
+          // Use precise target dimensions; AA smooths into hexagonal-like modules
+          element.renderWidth = 199;
+          element.renderHeight = 191;
+          element.useAA = true;
+          element.maxicodeOffsetX = 1; // Zebra MaxiCode starts 1px right of FO
         } else {
           element.renderWidth = img.width;
           element.renderHeight = img.height;
@@ -519,12 +538,16 @@ class BarcodeDrawer extends BaseDrawer {
 
     ctx.save();
     // Disable interpolation for pixel-perfect barcode scaling
-    ctx.imageSmoothingEnabled = false;
+    // EXCEPT for MaxiCode where AA simulates hexagonal modules
+    ctx.imageSmoothingEnabled = !!element.useAA;
+    if (element.useAA) ctx.imageSmoothingQuality = "high";
     // Zebra adds a 10-dot Y offset for QR codes (quiet zone above modules)
     const qrYOffset = element.codeType === "qrcode" ? 10 : 0;
+    const maxicodeOffsetX = element.maxicodeOffsetX || 0;
+    const maxicodeOffsetY = element.maxicodeOffsetY || 0;
     if (orient === "N") {
-      const dy = (isBaseline ? y - h : y) + qrYOffset;
-      ctx.drawImage(image, x, dy, w, h);
+      const dy = (isBaseline ? y - h : y) + qrYOffset + maxicodeOffsetY;
+      ctx.drawImage(image, x + maxicodeOffsetX, dy, w, h);
     } else {
       // Scale image to render size first, then rotate pixels
       const tmpCanvas = createCanvas(w, h);
