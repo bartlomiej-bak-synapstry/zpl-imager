@@ -554,7 +554,9 @@ class BarcodeDrawer extends BaseDrawer {
     const isBaseline = element.originType === "baseline";
 
     if (orient === "N") {
-      if (isBaseline) elY -= totalH;
+      // ^FT anchor is "base of barcode" = bars bottom (NOT including text below)
+      // So shift up by heightDots only when text is below; text continues below anchor
+      if (isBaseline) elY -= (printAbove ? totalH : heightDots);
       const barY = elY + (printAbove && fontSize ? textAreaH : 0);
       ctx.fillStyle = "black";
       for (const bar of bars) {
@@ -681,9 +683,17 @@ class BarcodeDrawer extends BaseDrawer {
       // B: rotates to bottom-right → shift left AND up
       const dx = isBaseline ? (orient === "I" || orient === "B" ? -rotated.width : 0) : 0;
       const dy = isBaseline ? (orient === "B" ? -rotated.height : 0) : 0;
-      // Compensate for barOffsetX: after rotation the offset maps to different axes
+      // ^FO/^FT position should anchor BARS (not canvas edge). Text extends:
+      // R: text LEFT of bars  → shift canvas left by textAreaH
+      // I: text ABOVE bars    → shift canvas up by textAreaH
+      // B (^FT only): bars at canvas LEFT, anchor at bars bottom-LEFT (rotated to canvas bottom-LEFT area + heightDots-1) → shift right by textAreaH
+      const textShift = (textAreaH > 0 && !printAbove) ? textAreaH : 0;
       let drawX = elX + dx;
       let drawY = elY + dy;
+      if (orient === "R") drawX -= textShift;
+      else if (orient === "I") drawY -= textShift;
+      else if (orient === "B" && isBaseline) drawX += textShift;
+      // Compensate for barOffsetX: after rotation the offset maps to different axes
       if (barOffsetX > 0) {
         if (orient === "N" || orient === "I") drawX -= barOffsetX;
         else if (orient === "R") drawY -= barOffsetX;

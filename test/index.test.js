@@ -22,8 +22,8 @@ describe("ZPL to PNG visual regression", () => {
         "4":  3610,    // EAN-13: per-digit slot centering
         "5":  3020,    // I2of5: centering + advance calibration
         // Rotated barcodes: missing D-Z glyphs in bitmap font
-        "6":  73000,   // Code 39 rotated: canvas font fallback for D-Z
-        "7":  48000,   // Code 128 rotated: canvas font fallback
+        "6":  5500,    // Code 39 rotated: canvas font fallback for D-Z chars
+        "7":  3700,    // Code 128 rotated: canvas font fallback
         // 2D barcodes: bwip-js encoder differences
         "8":  222000,  // PDF417: different codeword patterns
         "24": 73000,   // MaxiCode: different module layout
