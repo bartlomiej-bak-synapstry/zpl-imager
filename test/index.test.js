@@ -31,8 +31,8 @@ describe("ZPL to PNG visual regression", () => {
         // Font rendering: Liberation Sans Bold vs CG Triumvirate Bold
         "13": 22000,   // Multi-font families
         "14": 14400,   // Font width/rotation
-        "15": 4000,    // Reverse video + font shapes
-        "17": 4200,    // Reverse video + font shapes
+        "15": 600,     // Reverse video + font shapes (^FR XOR fix)
+        "17": 800,     // Reverse video + font shapes (^FR XOR fix)
         "18": 5,       // Box rounded corner AA
         "19": 2,       // Box rounded corner AA
         "26": 2000,    // Field block alignment + font

@@ -33,7 +33,13 @@ class TextDrawer extends BaseDrawer {
   draw(ctx: any, element: any): void {
     const { x, y, text, height, orientation, originType, scaleX } = element;
     ctx.save();
-    ctx.fillStyle = element.reverse ? "white" : "black";
+    if (element.reverse) {
+      // ^FR: invert pixels under text glyphs (XOR via difference compositing)
+      ctx.globalCompositeOperation = "difference";
+      ctx.fillStyle = "white";
+    } else {
+      ctx.fillStyle = "black";
+    }
     const fontSize = height || element.renderHeight || 10;
     const fontFace =
       element.fontName && element.fontName.toString().toUpperCase() === "0"
