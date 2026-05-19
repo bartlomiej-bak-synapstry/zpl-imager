@@ -1,6 +1,6 @@
 {
   "name": "@synapstry/zpl-imager",
-  "version": "0.2.7",
+  "version": "0.3.0",
   "description": "A Node.js library for rendering ZPL (Zebra Programming Language) labels and barcodes as images.",
   "main": "index.ts",
   "type": "module",
@@ -33,6 +33,8 @@
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",
+    "nx": "^22.7.2",
+    "semver": "^7.8.0",
     "typescript": "^5.9.2"
   }
 }

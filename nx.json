@@ -1,0 +1,9 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "cli": {
+    "analytics": false
+  },
+  "tui": {
+    "enabled": false
+  }
+}
