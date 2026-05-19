@@ -13,19 +13,21 @@ describe("ZPL to PNG visual regression", () => {
     const zplDir = path.join(__dirname, "resources", "zpl");
     const pngDir = path.join(__dirname, "resources", "png");
     const diffDir = path.join(__dirname, "..", "tmp", "test");
+    fs.mkdirSync(diffDir, { recursive: true });
+
 
     // Per-test tolerance for known limitations
     const maxDiffPixels = {
         // Barcode interpretation text: bitmap font AA differences
-        "1":  2900,    // Code 39: side bearings glyph AA
-        "3":  1720,    // Code 128: bitmap font AA
-        "4":  3610,    // EAN-13: per-digit slot centering
-        "5":  3020,    // I2of5: centering + advance calibration
+        "1": 2900,    // Code 39: side bearings glyph AA
+        "3": 1720,    // Code 128: bitmap font AA
+        "4": 3610,    // EAN-13: per-digit slot centering
+        "5": 3020,    // I2of5: centering + advance calibration
         // Rotated barcodes: missing D-Z glyphs in bitmap font
-        "6":  5500,    // Code 39 rotated: canvas font fallback for D-Z chars
-        "7":  3700,    // Code 128 rotated: canvas font fallback
+        "6": 5500,    // Code 39 rotated: canvas font fallback for D-Z chars
+        "7": 3700,    // Code 128 rotated: canvas font fallback
         // 2D barcodes: bwip-js encoder differences
-        "8":  222000,  // PDF417: different codeword patterns
+        "8": 222000,  // PDF417: different codeword patterns
         "24": 26000,   // MaxiCode: mode 3 fallback + AA hexagon approximation
         "25": 18000,   // QR Code: bwip-js different mask pattern (position fixed)
         // Font rendering: Liberation Sans Bold vs CG Triumvirate Bold
